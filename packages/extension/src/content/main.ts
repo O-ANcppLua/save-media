@@ -46,10 +46,22 @@ const emit = (kind: CaptureKind, url: string | null, extras: Partial<MainToBridg
   post({ kind, url: canonicaliseUrl(url), pageUrl: location.href, ...extras });
 };
 
+/**
+ * Match URLs that are the entry point of a stream — manifests or full
+ * progressive files — NOT individual segments. CMAF/HLS-fMP4 segments
+ * end in `.m4s` and DASH/HLS-TS segments end in `.ts`/`.m4s`. The
+ * engine walks segments via the master/media playlist on its own; if
+ * we surface them as separate descriptors the popup fills with N+1
+ * "fake" items per stream and the user ends up downloading one chunk
+ * instead of the whole video.
+ *
+ * `.ts` is intentionally excluded too (collides with TypeScript files
+ * and tooling URLs; standalone MPEG-TS files almost never have this
+ * extension on the open web).
+ */
 function looksLikeMedia(url: string): boolean {
   if (!url) return false;
-  if (/\.(m3u8|mpd|mp4|m4v|webm|mkv|mov|mpegts|m4s|avi|flv|wmv)(\?|#|$)/i.test(url)) return true;
-  return false;
+  return /\.(m3u8|mpd|mp4|m4v|webm|mkv|mov|avi|flv|wmv)(\?|#|$)/i.test(url);
 }
 
 const _fetch = window.fetch;
