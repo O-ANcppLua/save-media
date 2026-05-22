@@ -2,6 +2,7 @@
 node_modules/
 .pnpm-store/
 dist/
+dist-build/
 dist-chrome/
 dist-edge/
 dist-firefox/
