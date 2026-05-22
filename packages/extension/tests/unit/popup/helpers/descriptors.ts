@@ -48,6 +48,7 @@ export function hlsDescriptor(
     segmentRef: {
       kind: "hls-segments",
       playlistUrl: "https://example.com/master.m3u8",
+      initSegmentUrl: null,
       segmentUrls: [],
       encryption: null,
     },

@@ -73,9 +73,43 @@ seg-2.ts
     expect(d.variants[0]?.segmentRef).toMatchObject({
       kind: "hls-segments",
       playlistUrl: "https://cdn/video/1080p.m3u8",
+      initSegmentUrl: null,
       segmentUrls: [
         "https://cdn/video/seg-1.ts",
         "https://cdn/video/seg-2.ts",
+      ],
+      encryption: null,
+    });
+  });
+
+  it("HLS fMP4 media playlist keeps EXT-X-MAP init segment with the variant", async () => {
+    const d = await classify({
+      tabId: 1,
+      pageUrl: "https://example.com/page",
+      url: "https://cdn/video/720p.av1.mp4.m3u8",
+      headers: { "content-type": "application/vnd.apple.mpegurl" },
+      bodyBytes: null,
+      manifestText: `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:5
+#EXT-X-MAP:URI="720p.av1.mp4/init-v1-a1.mp4"
+#EXTINF:4.0,
+720p.av1.mp4/seg-1-v1-a1.mp4
+#EXTINF:4.0,
+720p.av1.mp4/seg-2-v1-a1.mp4
+#EXT-X-ENDLIST
+`,
+    });
+
+    expect(d.protocol).toBe("hls");
+    expect(d.container).toBe("fmp4");
+    expect(d.variants[0]?.segmentRef).toMatchObject({
+      kind: "hls-segments",
+      playlistUrl: "https://cdn/video/720p.av1.mp4.m3u8",
+      initSegmentUrl: "https://cdn/video/720p.av1.mp4/init-v1-a1.mp4",
+      segmentUrls: [
+        "https://cdn/video/720p.av1.mp4/seg-1-v1-a1.mp4",
+        "https://cdn/video/720p.av1.mp4/seg-2-v1-a1.mp4",
       ],
       encryption: null,
     });

@@ -9,6 +9,7 @@ export interface HlsMasterParseResult {
 
 export interface HlsMediaPlaylistParseResult {
   readonly segments: ReadonlyArray<{ readonly uri: string; readonly duration: number }>;
+  readonly initSegmentUrl: string | null;
   readonly encryption: {
     readonly method: string;
     readonly uri: string;
@@ -53,6 +54,7 @@ export function parseHlsMaster(manifestText: string, manifestUrl: string): HlsMa
       segmentRef: {
         kind: "hls-segments",
         playlistUrl: new URL(p.uri, manifestUrl).href,
+        initSegmentUrl: null,
         segmentUrls: [],
         encryption: null,
       },
@@ -69,6 +71,7 @@ export function parseHlsMediaPlaylist(manifestText: string, manifestUrl: string)
 
   const manifest = parser.manifest;
   const segs = manifest.segments ?? [];
+  const firstMap = segs.find(s => s.map?.uri)?.map ?? null;
 
   // AES-128 key is attached per-segment
   const segKey = segs.find(s => s.key)?.key;
@@ -88,6 +91,7 @@ export function parseHlsMediaPlaylist(manifestText: string, manifestUrl: string)
     : contentProtectionKey;
 
   return {
+    initSegmentUrl: firstMap?.uri ? new URL(firstMap.uri, manifestUrl).href : null,
     segments: segs.map(s => ({ uri: new URL(s.uri, manifestUrl).href, duration: s.duration })),
     encryption: rawKey
       ? { method: rawKey.method, uri: new URL(rawKey.uri, manifestUrl).href, iv: rawKey.iv }

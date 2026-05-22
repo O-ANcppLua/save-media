@@ -8,6 +8,7 @@ export type CaptureHandler = (
 interface RequestDetails {
   readonly tabId: number;
   readonly url: string;
+  readonly type?: string | undefined;
   readonly documentUrl?: string | undefined;
   readonly initiator?: string | undefined;
 }
@@ -28,15 +29,31 @@ export function registerNetworkCapture(handleCapture: CaptureHandler): void {
   );
 }
 
-export function looksLikeMediaEntryUrl(url: string): boolean {
-  return /\.(m3u8|mpd|mp4|m4v|webm|mkv|mov|avi|flv|wmv)(\?|#|$)/i.test(url);
+export function looksLikeMediaEntryUrl(url: string, requestType?: string): boolean {
+  if (/\.(m3u8|mpd)(\?|#|$)/i.test(url)) return true;
+  if (looksLikeFragmentUrl(url)) return false;
+  if (requestType === "xmlhttprequest") return false;
+  return /\.(mp4|m4v|webm|mkv|mov|avi|flv|wmv)(\?|#|$)/i.test(url);
+}
+
+export function looksLikeFragmentUrl(url: string): boolean {
+  let path: string;
+  try {
+    path = new URL(url).pathname.toLowerCase();
+  } catch {
+    path = url.toLowerCase();
+  }
+  const base = path.split("/").filter(Boolean).at(-1) ?? path;
+  if (/\.(m4s|ts|mpegts)$/i.test(base)) return true;
+  if (/\.mp4\/[^/]+\.(mp4|m4s)$/i.test(path)) return true;
+  return /^(init|seg|segment|chunk|frag|fragment|part)[._-][a-z0-9._-]*\.(mp4|m4v)$/i.test(base);
 }
 
 async function handleNetworkRequest(
   details: RequestDetails,
   handleCapture: CaptureHandler,
 ): Promise<void> {
-  if (details.tabId < 0 || !looksLikeMediaEntryUrl(details.url)) return;
+  if (details.tabId < 0 || !looksLikeMediaEntryUrl(details.url, details.type)) return;
 
   const pageUrl = await pageUrlFor(details);
   const kind: CaptureKind = details.url.includes(".mpd") ? "xhr" : "fetch";

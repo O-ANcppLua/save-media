@@ -5,6 +5,7 @@
  * Serves:
  *   /direct/clip.mp4 .webm .mkv  — small synthetic progressive files
  *   /hls/master.m3u8 + media.m3u8 + segNNN.ts — clear HLS VOD
+ *   /hls-fmp4/master.m3u8 + media.m3u8 + EXT-X-MAP init + moof fragments
  *   /hls-aes/key + master + media + ciphertext segments
  *   /dash/clip.mpd + init.m4s + segNNN.m4s — clear DASH VOD
  *   /drm/widevine.mpd                       — DASH with Widevine ContentProtection
@@ -43,6 +44,24 @@ const MEDIA_M3U8 = `#EXTM3U
 seg000.ts
 #EXTINF:6.0,
 seg001.ts
+#EXT-X-ENDLIST
+`;
+
+const FMP4_MASTER_M3U8 = `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,CODECS="av01.0.05M.08,mp4a.40.2"
+media.m3u8
+`;
+
+const FMP4_MEDIA_M3U8 = `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:6
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-MAP:URI="init-v1-a1.mp4"
+#EXTINF:6.0,
+seg-1-v1-a1.mp4
+#EXTINF:6.0,
+seg-2-v1-a1.mp4
 #EXT-X-ENDLIST
 `;
 
@@ -118,6 +137,13 @@ const routes = {
   "/hls/seg000.ts":    { type: "video/mp2t", body: Buffer.alloc(188, 0x47) },
   "/hls/seg001.ts":    { type: "video/mp2t", body: Buffer.alloc(188, 0x47) },
 
+  // HLS fMP4. Bytes are shape-only for classification/capture filtering.
+  "/hls-fmp4/master.m3u8":       { type: "application/vnd.apple.mpegurl", body: Buffer.from(FMP4_MASTER_M3U8) },
+  "/hls-fmp4/media.m3u8":        { type: "application/vnd.apple.mpegurl", body: Buffer.from(FMP4_MEDIA_M3U8) },
+  "/hls-fmp4/init-v1-a1.mp4":    { type: "video/mp4", body: MP4_HEADER },
+  "/hls-fmp4/seg-1-v1-a1.mp4":   { type: "video/mp4", body: Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x08]), Buffer.from("moof")]) },
+  "/hls-fmp4/seg-2-v1-a1.mp4":   { type: "video/mp4", body: Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x08]), Buffer.from("moof")]) },
+
   // HLS AES-128
   "/hls-aes/master.m3u8": { type: "application/vnd.apple.mpegurl", body: Buffer.from(MASTER_M3U8.replace("media.m3u8", "media.m3u8")) },
   "/hls-aes/media.m3u8":  { type: "application/vnd.apple.mpegurl", body: Buffer.from(AES_MEDIA_M3U8) },
@@ -147,6 +173,11 @@ const routes = {
 const pages = {
   direct: html("direct", `<video src="/direct/clip.mp4" controls width="640"></video>`),
   hls: html("hls", `<script>fetch("/hls/master.m3u8");</script><p>hls fixture</p>`),
+  "hls-fmp4": html("hls-fmp4", `<script>
+    fetch("/hls-fmp4/master.m3u8");
+    fetch("/hls-fmp4/init-v1-a1.mp4").catch(() => {});
+    fetch("/hls-fmp4/seg-1-v1-a1.mp4").catch(() => {});
+  </script><p>hls fmp4 fixture</p>`),
   "hls-aes": html("hls-aes", `<script>fetch("/hls-aes/master.m3u8");</script><p>hls-aes fixture</p>`),
   dash: html("dash", `<script>fetch("/dash/clip.mpd");</script><p>dash fixture</p>`),
   widevine: html("widevine", `<script>fetch("/drm/widevine.mpd");</script><p>widevine fixture</p>`),

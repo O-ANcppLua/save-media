@@ -53,6 +53,7 @@ export type SegmentRef =
   | {
       readonly kind: "hls-segments";
       readonly playlistUrl: string;
+      readonly initSegmentUrl: string | null;
       readonly segmentUrls: readonly string[];
       readonly encryption: HlsEncryption | null;
     }

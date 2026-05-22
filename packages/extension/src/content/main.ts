@@ -53,7 +53,22 @@ const emit = (kind: CaptureKind, url: string | null, extras: Partial<MainToBridg
  * that raced ahead during extension startup.
  */
 function looksLikeMediaEntry(url: string): boolean {
-  return /\.(m3u8|mpd|mp4|m4v|webm|mkv|mov|avi|flv|wmv)(\?|#|$)/i.test(url);
+  if (/\.(m3u8|mpd)(\?|#|$)/i.test(url)) return true;
+  if (looksLikeFragmentUrl(url)) return false;
+  return /\.(mp4|m4v|webm|mkv|mov|avi|flv|wmv)(\?|#|$)/i.test(url);
+}
+
+function looksLikeFragmentUrl(url: string): boolean {
+  let path: string;
+  try {
+    path = new URL(url, location.href).pathname.toLowerCase();
+  } catch {
+    path = url.toLowerCase();
+  }
+  const base = path.split("/").filter(Boolean).at(-1) ?? path;
+  if (/\.(m4s|ts|mpegts)$/i.test(base)) return true;
+  if (/\.mp4\/[^/]+\.(mp4|m4s)$/i.test(path)) return true;
+  return /^(init|seg|segment|chunk|frag|fragment|part)[._-][a-z0-9._-]*\.(mp4|m4v)$/i.test(base);
 }
 
 function observeResourceUrl(url: string): void {

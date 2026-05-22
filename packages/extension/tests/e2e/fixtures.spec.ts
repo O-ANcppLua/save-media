@@ -33,6 +33,15 @@ test.describe("fixture server", () => {
     expect(mediaText).toContain("EXT-X-ENDLIST");
   });
 
+  test("serves the HLS fMP4 playlist with EXT-X-MAP init segment", async ({ page }) => {
+    await page.goto("/page/hls-fmp4.html");
+    const media = await page.request.get("/hls-fmp4/media.m3u8");
+    const text = await media.text();
+    expect(text).toContain("EXT-X-MAP");
+    expect(text).toContain("init-v1-a1.mp4");
+    expect(text).toContain("seg-1-v1-a1.mp4");
+  });
+
   test("serves the HLS AES-128 fixture with a reachable 16-byte key", async ({ page }) => {
     await page.goto("/page/hls-aes.html");
     const playlist = await page.request.get("/hls-aes/media.m3u8");

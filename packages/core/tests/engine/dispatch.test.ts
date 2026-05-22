@@ -18,6 +18,7 @@ function variant(overrides: Partial<Variant> = {}): Variant {
     segmentRef: {
       kind: "hls-segments",
       playlistUrl: "https://x/master.m3u8",
+      initSegmentUrl: null,
       segmentUrls: [],
       encryption: null,
     },
@@ -64,6 +65,7 @@ function makeHls(encryption: HlsEncryption | null = null): StreamDescriptor {
         segmentRef: {
           kind: "hls-segments",
           playlistUrl: "https://x/v1080.m3u8",
+          initSegmentUrl: null,
           segmentUrls: [],
           encryption,
         },

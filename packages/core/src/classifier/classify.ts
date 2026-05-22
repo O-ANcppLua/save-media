@@ -108,6 +108,7 @@ function buildSource(
 
 function hlsContainerFromSegments(segmentRef: SegmentRef): Container {
   if (segmentRef.kind !== "hls-segments") return "unknown";
+  if (segmentRef.initSegmentUrl) return "fmp4";
   const first = segmentRef.segmentUrls[0] ?? "";
   if (/\.(ts|mpegts)(\?|#|$)/i.test(first)) return "mpegts";
   if (/\.(m4s|mp4|m4v)(\?|#|$)/i.test(first)) return "fmp4";
@@ -132,6 +133,7 @@ function mediaPlaylistVariant(
     segmentRef: {
       kind: "hls-segments",
       playlistUrl: url,
+      initSegmentUrl: media.initSegmentUrl,
       segmentUrls: media.segments.map(s => s.uri),
       encryption,
     },

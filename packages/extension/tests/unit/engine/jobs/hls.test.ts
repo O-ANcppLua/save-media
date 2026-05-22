@@ -3,6 +3,7 @@ import { runHlsJob } from "../../../../src/engine/jobs/hls";
 import type { HlsPlainPlan, HlsAesPlan } from "@savemedia/core";
 import { hlsDescriptor } from "../../popup/helpers/descriptors";
 import type { VariantId } from "@savemedia/core";
+import type { JobSink } from "../../../../src/engine/sink";
 
 function plainPlan(): HlsPlainPlan {
   return {
@@ -38,6 +39,17 @@ const MEDIA_PLAYLIST = `#EXTM3U
 seg1.ts
 #EXTINF:10.0,
 seg2.ts
+#EXT-X-ENDLIST
+`;
+
+const FMP4_MEDIA_PLAYLIST = `#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-TARGETDURATION:10
+#EXT-X-MAP:URI="init-v1-a1.mp4"
+#EXTINF:10.0,
+seg-1-v1-a1.mp4
+#EXTINF:10.0,
+seg-2-v1-a1.mp4
 #EXT-X-ENDLIST
 `;
 
@@ -94,6 +106,27 @@ function patchFetch(fetcher: (url: string) => Promise<Response>): void {
   globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => fetcher(String(url))) as unknown as typeof fetch;
 }
 
+class CapturingSink implements JobSink {
+  readonly chunks: Uint8Array[] = [];
+  filename = "";
+
+  async open(filename: string): Promise<void> {
+    this.filename = filename;
+  }
+
+  async write(bytes: Uint8Array): Promise<void> {
+    this.chunks.push(bytes);
+  }
+
+  async close(): Promise<{ blobUrl: string; filename: string; checksum: string }> {
+    return { blobUrl: "blob:capture", filename: this.filename, checksum: "" };
+  }
+
+  async abort(): Promise<void> {
+    this.chunks.length = 0;
+  }
+}
+
 describe("runHlsJob — plain", () => {
   it("fetches the media playlist, all segments, and returns a Blob URL", async () => {
     const seg1 = new Uint8Array([1, 2, 3, 4]);
@@ -147,7 +180,7 @@ describe("runHlsJob — plain", () => {
       ...d,
       variants: [{
         ...d.variants[0]!,
-        segmentRef: { kind: "hls-segments" as const, playlistUrl: "", segmentUrls: [], encryption: null },
+        segmentRef: { kind: "hls-segments" as const, playlistUrl: "", initSegmentUrl: null, segmentUrls: [], encryption: null },
       }],
     };
     await expect(runHlsJob(plainPlan(), noUrl, vi.fn(), new AbortController().signal))
@@ -223,6 +256,53 @@ describe("runHlsJob — runtime authority over encryption", () => {
     });
     const result = await runHlsJob(plainPlan(), hlsDescriptor(), vi.fn(), new AbortController().signal);
     expect(result.filename).toBe("out.mp4");
+  });
+
+  it("prepends EXT-X-MAP init bytes before fMP4 media fragments", async () => {
+    const init = new Uint8Array(16);
+    init.set([0x66, 0x74, 0x79, 0x70], 4);
+    const moof1 = new Uint8Array(16);
+    moof1.set([0x6d, 0x6f, 0x6f, 0x66], 4);
+    moof1[15] = 1;
+    const moof2 = new Uint8Array(16);
+    moof2.set([0x6d, 0x6f, 0x6f, 0x66], 4);
+    moof2[15] = 2;
+    const fetched: string[] = [];
+    patchFetch(async url => {
+      fetched.push(url);
+      if (url.endsWith(".m3u8")) return textResponse(FMP4_MEDIA_PLAYLIST);
+      if (url.endsWith("init-v1-a1.mp4")) return bytesResponse(init);
+      if (url.endsWith("seg-1-v1-a1.mp4")) return bytesResponse(moof1);
+      if (url.endsWith("seg-2-v1-a1.mp4")) return bytesResponse(moof2);
+      throw new Error(`unexpected ${url}`);
+    });
+
+    const sink = new CapturingSink();
+    const result = await runHlsJob(plainPlan(), hlsDescriptor(), vi.fn(), new AbortController().signal, sink);
+
+    expect(result.filename).toBe("out.mp4");
+    expect(fetched.map(u => u.split("/").at(-1))).toEqual([
+      "master.m3u8",
+      "init-v1-a1.mp4",
+      "seg-1-v1-a1.mp4",
+      "seg-2-v1-a1.mp4",
+    ]);
+    expect(sink.chunks).toEqual([init, moof1, moof2]);
+  });
+
+  it("refuses bare fMP4 fragments when the playlist has no EXT-X-MAP init segment", async () => {
+    patchFetch(async url => {
+      if (url.endsWith(".m3u8")) return textResponse(MEDIA_PLAYLIST.replaceAll(".ts", ".mp4"));
+      const moof = new Uint8Array(16);
+      moof.set([0x6d, 0x6f, 0x6f, 0x66], 4);
+      return bytesResponse(moof);
+    });
+
+    await expect(runHlsJob(plainPlan(), hlsDescriptor(), vi.fn(), new AbortController().signal))
+      .rejects.toMatchObject({
+        code: "manifest_malformed",
+        parserError: "fMP4 HLS media segments require an EXT-X-MAP init segment",
+      });
   });
 });
 

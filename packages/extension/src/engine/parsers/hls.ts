@@ -28,6 +28,7 @@ export interface RuntimeSegment {
 }
 
 export interface RuntimePlaylist {
+  readonly initSegmentUrl: string | null;
   readonly segments: readonly RuntimeSegment[];
   readonly targetDuration: number | null;
   readonly encryption: RuntimeEncryption | null;
@@ -39,6 +40,7 @@ export function parseHlsMediaPlaylistRuntime(text: string, playlistUrl: string):
   parser.end();
   const m = parser.manifest;
   const startSeq = (m.mediaSequence ?? 0) as number;
+  const firstMap = m.segments?.find(s => s.map?.uri)?.map ?? null;
   const segs: RuntimeSegment[] = (m.segments ?? []).map((s, i) => ({
     uri: new URL(s.uri, playlistUrl).href,
     duration: s.duration,
@@ -56,6 +58,7 @@ export function parseHlsMediaPlaylistRuntime(text: string, playlistUrl: string):
     : null;
 
   return {
+    initSegmentUrl: firstMap?.uri ? new URL(firstMap.uri, playlistUrl).href : null,
     segments: segs,
     targetDuration: typeof m.targetDuration === "number" ? m.targetDuration : null,
     encryption,

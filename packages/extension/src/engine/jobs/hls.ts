@@ -75,7 +75,7 @@ export async function runHlsJob(
   // Runtime-authoritative encryption decision. The plan kind is advisory.
   const cryptoKey = await resolveDecryptionKey(media.encryption, signal);
 
-  return fetchSegments(media.segments, plan, onProgress, signal, cryptoKey, externalSink);
+  return fetchSegments(media, plan, onProgress, signal, cryptoKey, externalSink);
 }
 
 async function resolveDecryptionKey(
@@ -98,13 +98,14 @@ async function resolveDecryptionKey(
 }
 
 async function fetchSegments(
-  segments: readonly RuntimeSegment[],
+  media: { readonly initSegmentUrl: string | null; readonly segments: readonly RuntimeSegment[] },
   plan: HlsPlainPlan | HlsAesPlan,
   onProgress: ProgressFn,
   signal: AbortSignal,
   cryptoKey: CryptoKey | null,
   externalSink: JobSink | undefined,
 ): Promise<JobResult> {
+  const { initSegmentUrl, segments } = media;
   const failed: number[] = [];
   let consecutiveFailures = 0;
   let bytesWritten = 0;
@@ -114,6 +115,18 @@ async function fetchSegments(
   let firstBytes: Uint8Array | null = null;
   let sink: JobSink | null = externalSink ?? null;
   let openedFilename: string | null = null;
+
+  if (initSegmentUrl) {
+    onProgress(0, null, "fetching-init");
+    const initResp = await fetchWithRetry(initSegmentUrl, signal, "segment");
+    firstBytes = new Uint8Array(await initResp.arrayBuffer());
+    const { mime, filename } = honestOutput(firstBytes, initSegmentUrl, plan, true);
+    if (!sink) sink = new InMemorySink(mime);
+    await sink.open(filename, plan.estimatedBytes);
+    openedFilename = filename;
+    await sink.write(firstBytes);
+    bytesWritten += firstBytes.byteLength;
+  }
 
   for (let i = 0; i < segments.length; i++) {
     if (signal.aborted) {
@@ -129,7 +142,7 @@ async function fetchSegments(
       }
       if (firstBytes === null) {
         firstBytes = body;
-        const { mime, filename } = honestOutput(body, seg.uri, plan);
+        const { mime, filename } = honestOutput(body, seg.uri, plan, false);
         if (!sink) sink = new InMemorySink(mime);
         await sink.open(filename, plan.estimatedBytes);
         openedFilename = filename;
@@ -178,7 +191,7 @@ async function fetchSegments(
   // Concatenating .ts bytes and calling them .mp4 is a lie that breaks
   // QuickTime / iOS. mediabunny copies the H.264/AAC packets into an
   // MP4 box structure (no re-encode) and we ship that instead.
-  const sniff = sniffContainer(firstBytes, segments[0]?.uri);
+  const sniff = sniffContainer(firstBytes, initSegmentUrl ?? segments[0]?.uri);
   if (sniff === "mpegts" && plan.outputContainer === "mp4") {
     onProgress(bytesWritten, bytesWritten, "remuxing-ts-to-mp4");
     const tsBytes = concatBlobParts((sink as InMemorySink).partsForProbe());
@@ -229,6 +242,7 @@ function isTerminalThrown(err: unknown): boolean {
   if (!err || typeof err !== "object" || !("code" in err)) return false;
   const code = (err as { code: string }).code;
   return code === "cdm_required"
+    || code === "manifest_malformed"
     || code === "encrypted_media_detected"
     || code === "clear_segments_unavailable"
     || code === "license_bound_stream"
@@ -284,21 +298,29 @@ function playlistUrlOf(v: Variant): string | null {
 }
 
 /**
- * Sniff the first segment to decide the real on-disk container, then
+ * Sniff the first bytes to decide the real on-disk container, then
  * rename the output filename to match. The plan's outputContainer is the
  * requested target — when our concatenation-only path can't satisfy it
- * (e.g. MPEG-TS bytes were requested as MP4) we honestly emit `.ts` so
- * the user doesn't get a misnamed file. Real MP4 remux of MPEG-TS needs
- * the ffmpeg.wasm transcode path.
+ * we either take a real remux path (MPEG-TS → MP4) or fail before a
+ * misleading file reaches disk.
  */
 function honestOutput(
   firstSegment: Uint8Array,
   firstSegmentUri: string | undefined,
   plan: HlsPlainPlan | HlsAesPlan,
+  hasInitSegment: boolean,
 ): { mime: string; filename: string } {
   const sniff = sniffContainer(firstSegment, firstSegmentUri);
   const requested = plan.outputContainer;
   if (sniff === "fmp4" && requested === "mp4") return { mime: "video/mp4", filename: plan.outputFilename };
+  if (sniff === "fmp4-fragment" && requested === "mp4" && !hasInitSegment) {
+    throw {
+      code: "manifest_malformed",
+      severity: "terminal",
+      url: firstSegmentUri ?? "",
+      parserError: "fMP4 HLS media segments require an EXT-X-MAP init segment",
+    };
+  }
   if (sniff === "webm" && requested === "webm") return { mime: "video/webm", filename: plan.outputFilename };
   if (sniff === "mpegts") {
     return { mime: "video/mp2t", filename: replaceExt(plan.outputFilename, "ts") };
@@ -306,12 +328,12 @@ function honestOutput(
   return { mime: mimeForContainer(requested), filename: plan.outputFilename };
 }
 
-type ContainerSniff = "fmp4" | "mpegts" | "webm" | "unknown";
+type ContainerSniff = "fmp4" | "fmp4-fragment" | "mpegts" | "webm" | "unknown";
 
 function sniffContainer(bytes: Uint8Array | undefined, segmentUri: string | undefined): ContainerSniff {
   if (bytes && bytes.length > 0) {
     if (bytes.length >= 8 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) return "fmp4"; // ftyp
-    if (bytes.length >= 8 && bytes[4] === 0x6D && bytes[5] === 0x6F && bytes[6] === 0x6F && bytes[7] === 0x66) return "fmp4"; // moof
+    if (bytes.length >= 8 && bytes[4] === 0x6D && bytes[5] === 0x6F && bytes[6] === 0x6F && bytes[7] === 0x66) return "fmp4-fragment"; // moof
     if (bytes[0] === 0x47) return "mpegts"; // TS sync byte
     if (bytes.length >= 4 && bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) return "webm"; // EBML
     // Bytes were present but didn't match a known magic — trust the

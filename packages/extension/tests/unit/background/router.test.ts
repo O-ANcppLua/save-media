@@ -53,6 +53,7 @@ describe("router — descriptor de-duplication", () => {
         segmentRef: {
           kind: "hls-segments",
           playlistUrl: "https://cdn/video/720p.m3u8",
+          initSegmentUrl: null,
           segmentUrls: [],
           encryption: null,
         },
@@ -74,6 +75,7 @@ describe("router — descriptor de-duplication", () => {
         segmentRef: {
           kind: "hls-segments",
           playlistUrl: "https://cdn/video/720p.m3u8",
+          initSegmentUrl: null,
           segmentUrls: [],
           encryption: null,
         },
@@ -302,6 +304,7 @@ function hlsMediaDescriptor(manifestUrl: string): StreamDescriptor {
       segmentRef: {
         kind: "hls-segments",
         playlistUrl: manifestUrl,
+        initSegmentUrl: null,
         segmentUrls: [`${manifestUrl}/seg0.ts`],
         encryption: null,
       },

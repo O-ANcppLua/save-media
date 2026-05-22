@@ -99,6 +99,13 @@ test.describe("extension classifies real fixture pages", () => {
     expect(hls?.capabilities.drmBlocked).toBe(false);
   });
 
+  test("HLS fMP4 fixture ignores init/fragment .mp4 requests as standalone videos", async () => {
+    const descriptors = await waitForDescriptors("hls-fmp4", ds => ds.some(d => d.protocol === "hls"));
+    const hls = descriptors.find(d => d.protocol === "hls");
+    expect(hls, `got ${JSON.stringify(descriptors)}`).toBeDefined();
+    expect(descriptors.filter(d => d.protocol === "progressive-http")).toHaveLength(0);
+  });
+
   test("DASH MPD fixture produces a dash descriptor", async () => {
     const descriptors = await waitForDescriptors("dash", ds => ds.some(d => d.protocol === "dash"));
     const dash = descriptors.find(d => d.protocol === "dash");
