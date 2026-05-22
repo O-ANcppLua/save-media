@@ -54,3 +54,8 @@ host.log
 playwright-report/
 test-results/
 e2e/fixtures/**/*.tmp
+
+# Extracted release zips (NOT the loadable dist; those are dist-chrome/dist-firefox)
+packages/extension/savemedia-chrome-*/
+packages/extension/savemedia-edge-*/
+packages/extension/savemedia-firefox-*/

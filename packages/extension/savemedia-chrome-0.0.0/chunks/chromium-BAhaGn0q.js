@@ -1,2 +1,0 @@
-const t="src/engine/offscreen.html";let e=null;async function r(){const o=chrome.runtime.getURL(t),n=chrome.runtime.getContexts;if(!(n&&(await n({contextTypes:["OFFSCREEN_DOCUMENT"],documentUrls:[o]})).length>0)){if(e){await e;return}e=chrome.offscreen.createDocument({url:t,reasons:["BLOBS"],justification:"Runs Mediabunny + WebCodecs remux engine for downloaded media."});try{await e}finally{e=null}}}async function s(){try{await chrome.offscreen.closeDocument()}catch{}}export{s as closeEngineHost,r as ensureEngineHost};
-//# sourceMappingURL=chromium-BAhaGn0q.js.map
