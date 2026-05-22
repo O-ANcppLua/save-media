@@ -26,8 +26,10 @@ from savemedia_host.schema import SchemaError, validate_request
 from savemedia_host.sink import SinkError, SinkRegistry
 from savemedia_host.ytdlp import (
     build_argv,
+    find_output_path,
     is_available as ytdlp_available,
     run as ytdlp_run,
+    sha256_file,
 )
 
 LOGGER = setup_logger()
@@ -56,16 +58,25 @@ def handle(msg: dict[str, Any], registry: SinkRegistry) -> dict[str, Any]:
     if rtype == "download.ytdlp":
         if not ytdlp_available():
             return _error(nonce, "native_host_dependency", "yt-dlp not on PATH")
-        argv = build_argv(msg["url"], msg["quality"], Path(msg["outputDir"]))
+        output_dir = Path(msg["outputDir"])
+        argv = build_argv(msg["url"], msg["quality"], output_dir)
         rc, tail = ytdlp_run(argv, timeout_seconds=3600)
         if rc != 0:
             return _error(nonce, "native_host_protocol", "yt-dlp non-zero exit", detail="\n".join(tail[-40:]))
+        output_path = find_output_path(tail, output_dir)
+        if output_path is None or not output_path.exists():
+            return _error(
+                nonce,
+                "native_host_protocol",
+                "yt-dlp succeeded but no output file detected",
+                detail="\n".join(tail[-40:]),
+            )
         return {
             "type": "complete",
             "nonce": nonce,
-            "outputPath": msg["outputDir"],
-            "bytesWritten": 0,
-            "checksum": "",
+            "outputPath": str(output_path),
+            "bytesWritten": output_path.stat().st_size,
+            "checksum": sha256_file(output_path),
         }
     if rtype == "sink.open":
         sink = registry.open(msg["filename"], msg.get("expectedSize"))

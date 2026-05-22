@@ -105,10 +105,11 @@ chrome.runtime.onMessage.addListener((
   }
 
   if (msg.type === "progress" || msg.type === "complete" || msg.type === "failed") {
-    const forward = router.handleEngineMessage(msg);
-    if (forward) {
-      chrome.runtime.sendMessage(forward, () => void chrome.runtime.lastError);
-    }
+    void router.handleEngineMessage(msg).then(forward => {
+      if (forward) {
+        chrome.runtime.sendMessage(forward, () => void chrome.runtime.lastError);
+      }
+    });
     return false;
   }
 

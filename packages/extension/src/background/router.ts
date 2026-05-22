@@ -38,7 +38,7 @@ export interface Router {
   readonly findDescriptor: (id: StreamDescriptor["id"]) => StreamDescriptor | null;
   readonly clearTab: (tabId: number) => void;
   readonly startDownload: (id: StreamDescriptor["id"], choice: UserChoice) => Promise<JobError | null>;
-  readonly handleEngineMessage: (msg: EngineToBackgroundMessage) => BackgroundToPopupMessage | null;
+  readonly handleEngineMessage: (msg: EngineToBackgroundMessage) => Promise<BackgroundToPopupMessage | null>;
   readonly handlePopupMessage: (
     msg: PopupToBackgroundMessage,
   ) => Promise<BackgroundToPopupMessage | { ok: true } | null>;
@@ -126,7 +126,7 @@ export function createRouter(deps: RouterDeps): Router {
     return null;
   }
 
-  function handleEngineMessage(msg: EngineToBackgroundMessage): BackgroundToPopupMessage | null {
+  async function handleEngineMessage(msg: EngineToBackgroundMessage): Promise<BackgroundToPopupMessage | null> {
     if (msg.type === "progress") {
       return {
         type: "job-progress",
@@ -138,12 +138,31 @@ export function createRouter(deps: RouterDeps): Router {
     }
     if (msg.type === "complete") {
       jobs.delete(msg.streamId);
-      void deps.downloads.download({
-        url: msg.blobUrl,
-        filename: msg.filename,
-        conflictAction: "uniquify",
-      });
-      return { type: "job-complete", streamId: msg.streamId, path: msg.filename };
+      // Native paths already wrote the file to disk (blobUrl is a file://
+      // URL there); skip handing it to chrome.downloads, which would fail
+      // on file: schemes anyway.
+      if (msg.blobUrl.startsWith("file://")) {
+        return { type: "job-complete", streamId: msg.streamId, path: msg.filename };
+      }
+      try {
+        await deps.downloads.download({
+          url: msg.blobUrl,
+          filename: msg.filename,
+          conflictAction: "uniquify",
+        });
+        return { type: "job-complete", streamId: msg.streamId, path: msg.filename };
+      } catch (err) {
+        return {
+          type: "job-failed",
+          streamId: msg.streamId,
+          error: {
+            code: "native_sink_io_error",
+            severity: "terminal",
+            errno: err instanceof Error ? err.message : String(err),
+            path: msg.filename,
+          },
+        };
+      }
     }
     if (msg.type === "failed") {
       jobs.delete(msg.streamId);

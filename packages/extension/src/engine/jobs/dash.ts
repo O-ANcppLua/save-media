@@ -105,12 +105,30 @@ async function downloadTrack(
   if (signal.aborted) throw new DOMException("user-cancelled", "AbortError");
 
   onProgress(bytesWritten, bytesWritten, "muxing");
+  // The DASH init segment is always fMP4/CMAF → concatenated output is a
+  // valid MP4. The plan's outputContainer is honoured (mp4 by default;
+  // webm only when explicitly requested and source is WebM CMAF).
   const mime = plan.outputContainer === "webm" ? "video/webm" : "video/mp4";
   const blob = new Blob(parts, { type: mime });
+  await assertContainerValid(parts[0], plan.outputContainer);
   onProgress(bytesWritten, bytesWritten, "finalizing");
   return {
     blobUrl: URL.createObjectURL(blob),
     filename: plan.outputFilename,
     checksum: "",
   };
+}
+
+async function assertContainerValid(initPart: BlobPart | undefined, expected: DashPlan["outputContainer"]): Promise<void> {
+  const { verify } = await import("@savemedia/core");
+  const head = initPart instanceof Uint8Array
+    ? initPart.subarray(0, 32)
+    : initPart instanceof ArrayBuffer
+      ? new Uint8Array(initPart).subarray(0, 32)
+      : undefined;
+  const result = await verify(
+    { path: "memory", bytes: 0, checksum: "", head },
+    [{ kind: "container-validity", via: "magic-bytes", expected }],
+  );
+  if (result.kind === "failure") throw result.error;
 }

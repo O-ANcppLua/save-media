@@ -1,12 +1,22 @@
 """yt-dlp argv builder + runner. No shell=True; explicit argv only."""
 from __future__ import annotations
 
+import hashlib
+import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Iterable
 
 from .paths import sanitize_filename
+
+# yt-dlp prints one of these lines on success. We parse the actual output
+# file out of stdout so the host can report a real path to the extension,
+# not just the output directory.
+_DESTINATION_RE = re.compile(
+    r'^(?:\[download\] Destination: |\[Merger\] Merging formats into "|\[download\] (?:Already )?\S+ has already been downloaded(?:\.| as )?)(.+?)(?:"|$)',
+)
+_DELETING_ORIGINAL_RE = re.compile(r'^Deleting original file (.+?)(?: \(pass -k to keep\))?$')
 
 # Quality hints accepted from the extension.
 QUALITY_TO_FORMAT = {
@@ -89,3 +99,51 @@ def run(
 
 def safe_output_name(title: str) -> str:
     return sanitize_filename(title)
+
+
+def find_output_path(tail: Iterable[str], output_dir: Path) -> Path | None:
+    """Walk yt-dlp's stdout tail in order and return the final output file.
+
+    yt-dlp prints multiple `Destination:` lines (one per format being
+    downloaded) and may merge them at the end into a single file via
+    `[Merger] Merging formats into "<final>"`. We honour the *last*
+    Merger line if present, otherwise the last Destination line, then
+    drop any file that was explicitly deleted along the way.
+    """
+    merged: str | None = None
+    destinations: list[str] = []
+    deleted: set[str] = set()
+    for line in tail:
+        m = _DESTINATION_RE.match(line)
+        if m:
+            candidate = m.group(1).strip()
+            if line.startswith("[Merger]"):
+                merged = candidate
+            else:
+                destinations.append(candidate)
+        d = _DELETING_ORIGINAL_RE.match(line)
+        if d:
+            deleted.add(d.group(1).strip())
+
+    candidates: list[str] = []
+    if merged is not None:
+        candidates.append(merged)
+    for dest in reversed(destinations):
+        if dest not in deleted:
+            candidates.append(dest)
+    for c in candidates:
+        path = Path(c)
+        if not path.is_absolute():
+            path = output_dir / path
+        if path.exists():
+            return path
+    return None
+
+
+def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Streaming sha256 so we don't materialise huge files into memory."""
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(chunk_size), b""):
+            h.update(chunk)
+    return h.hexdigest()

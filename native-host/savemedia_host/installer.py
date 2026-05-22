@@ -8,6 +8,7 @@ performs a smoke-test handshake by spawning the host with a `ping` request.
 from __future__ import annotations
 
 import json
+import os  # noqa: F401  (also imported below for EXTENSION_ID_CHROMIUM)
 import os
 import platform
 import shutil
@@ -19,7 +20,23 @@ from pathlib import Path
 from typing import Iterable
 
 HOST_NAME = "com.savemedia.host"
-EXTENSION_ID_CHROMIUM = "savemediaextensionidplaceholder0"  # filled in at packaging
+# Chromium extensions get a stable ID from the manifest's "key" field
+# (base64-encoded SPKI public key). For now we read both extension IDs
+# from an env var so the installer flow stays the same in dev and CI.
+#
+# To generate a stable Chromium ID:
+#   1. openssl genrsa -out savemedia.pem 2048
+#   2. openssl rsa -in savemedia.pem -pubout -outform DER | openssl base64 -A
+#   3. add { "key": "<that base64>" } to packages/extension/manifest.json
+#   4. compute the extension ID from the key (Chrome derives it as the
+#      first 32 hex chars of SHA-256(spki), mapped a-p)
+#   5. set SAVEMEDIA_CHROMIUM_EXTENSION_ID=<that id> when running install
+import os
+
+EXTENSION_ID_CHROMIUM = os.environ.get(
+    "SAVEMEDIA_CHROMIUM_EXTENSION_ID",
+    "savemediaextensionidplaceholder0",
+)
 EXTENSION_ID_FIREFOX = "savemedia@ancplua.dev"
 
 

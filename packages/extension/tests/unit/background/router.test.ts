@@ -108,10 +108,10 @@ describe("router — startDownload routing", () => {
 });
 
 describe("router — engine message handling", () => {
-  it("forwards progress messages to popup payload shape", () => {
+  it("forwards progress messages to popup payload shape", async () => {
     const r = createRouter(deps());
     const id = directDescriptor().id;
-    const out = r.handleEngineMessage({
+    const out = await r.handleEngineMessage({
       type: "progress",
       streamId: id,
       bytesWritten: 1,
@@ -127,7 +127,7 @@ describe("router — engine message handling", () => {
     });
   });
 
-  it("on complete: removes the job + downloads the blob + emits job-complete", () => {
+  it("on complete: AWAITS the download then removes the job and emits job-complete", async () => {
     const d = deps();
     const r = createRouter(d);
     r.jobs.set(directDescriptor().id, {
@@ -135,7 +135,7 @@ describe("router — engine message handling", () => {
       choice: choice(),
       plan: { kind: "direct", url: "", filename: "" },
     });
-    const out = r.handleEngineMessage({
+    const out = await r.handleEngineMessage({
       type: "complete",
       streamId: directDescriptor().id,
       blobUrl: "blob:x",
@@ -149,14 +149,55 @@ describe("router — engine message handling", () => {
     expect(r.jobs.size).toBe(0);
   });
 
-  it("on failed: removes the job + emits job-failed", () => {
+  it("on complete: a download failure becomes job-failed with native_sink_io_error (no false success)", async () => {
+    const d = deps();
+    d.downloads.download.mockRejectedValueOnce(new Error("ENOSPC: disk full"));
+    const r = createRouter(d);
+    r.jobs.set(directDescriptor().id, {
+      descriptor: directDescriptor(),
+      choice: choice(),
+      plan: { kind: "direct", url: "", filename: "" },
+    });
+    const out = await r.handleEngineMessage({
+      type: "complete",
+      streamId: directDescriptor().id,
+      blobUrl: "blob:x",
+      filename: "out.mp4",
+      checksum: "abc",
+    });
+    expect(out?.type).toBe("job-failed");
+    if (out?.type === "job-failed") {
+      expect(out.error.code).toBe("native_sink_io_error");
+    }
+  });
+
+  it("on complete: a file:// blobUrl (native sink wrote the file directly) skips chrome.downloads", async () => {
+    const d = deps();
+    const r = createRouter(d);
+    r.jobs.set(directDescriptor().id, {
+      descriptor: directDescriptor(),
+      choice: choice(),
+      plan: { kind: "direct", url: "", filename: "" },
+    });
+    const out = await r.handleEngineMessage({
+      type: "complete",
+      streamId: directDescriptor().id,
+      blobUrl: "file:///Users/x/Downloads/out.mp4",
+      filename: "out.mp4",
+      checksum: "abc",
+    });
+    expect(out?.type).toBe("job-complete");
+    expect(d.downloads.download).not.toHaveBeenCalled();
+  });
+
+  it("on failed: removes the job + emits job-failed", async () => {
     const r = createRouter(deps());
     r.jobs.set(directDescriptor().id, {
       descriptor: directDescriptor(),
       choice: choice(),
       plan: { kind: "direct", url: "", filename: "" },
     });
-    const out = r.handleEngineMessage({
+    const out = await r.handleEngineMessage({
       type: "failed",
       streamId: directDescriptor().id,
       error: { code: "engine_oom", severity: "terminal", workerMemoryMb: 100, budgetMb: 64 },

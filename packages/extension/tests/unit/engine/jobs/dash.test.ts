@@ -86,11 +86,18 @@ function patchFetch(fetcher: (url: string) => Promise<Response>): void {
   globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => fetcher(String(url))) as unknown as typeof fetch;
 }
 
+/** Synthetic ISO-BMFF init segment: 32-byte size + "ftyp" at offset 4. */
+function ftypInit(): Response {
+  const init = new Uint8Array(16);
+  init.set([0x66, 0x74, 0x79, 0x70], 4);
+  return new Response(init as BodyInit, { status: 200 });
+}
+
 describe("runDashJob", () => {
   it("fetches MPD, init, all media segments → returns Blob URL with the chosen filename", async () => {
     patchFetch(async url => {
       if (url.endsWith(".mpd")) return new Response(MPD, { status: 200 });
-      if (url.endsWith("init.mp4")) return bytes([0xff, 0xff, 0xff]);
+      if (url.endsWith("init.mp4")) return ftypInit();
       if (url.endsWith("m1.mp4")) return bytes([1, 2, 3, 4]);
       if (url.endsWith("m2.mp4")) return bytes([5, 6, 7]);
       throw new Error(`unexpected url ${url}`);
@@ -105,6 +112,16 @@ describe("runDashJob", () => {
     expect(phases).toContain("fetching-init");
     expect(phases.some((p: string) => /segment 2\/2/.test(p))).toBe(true);
     expect(phases).toContain("finalizing");
+  });
+
+  it("refuses to finalize when the init segment is not a valid MP4 init box", async () => {
+    patchFetch(async url => {
+      if (url.endsWith(".mpd")) return new Response(MPD, { status: 200 });
+      if (url.endsWith("init.mp4")) return bytes([0xDE, 0xAD, 0xBE, 0xEF]); // not an MP4 init
+      return bytes([0]);
+    });
+    await expect(runDashJob(plan(), dashDescriptor(), vi.fn(), new AbortController().signal))
+      .rejects.toMatchObject({ code: "verification_container" });
   });
 
   it("rejects with manifest_malformed when MPD has no usable track", async () => {
