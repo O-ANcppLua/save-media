@@ -9,7 +9,7 @@ import type {
   DrmStatus,
   StreamSource,
 } from "../types/stream";
-import type { CodecSet, Variant } from "../types/codec";
+import type { CodecSet, SegmentRef, Variant } from "../types/codec";
 import { classifyByUrl } from "./layer-url";
 import { classifyByHeaders } from "./layer-headers";
 import { classifyByMagicBytes } from "./layer-magic-bytes";
@@ -98,11 +98,44 @@ function buildSource(
   url: string,
   protocol: ProtocolFamily,
   headers: Readonly<Record<string, string>>,
+  hlsManifestType: "master" | "media" = "master",
 ): StreamSource {
   if (protocol === "hls")
-    return { kind: "hls-manifest", manifestUrl: url, type: "master" };
+    return { kind: "hls-manifest", manifestUrl: url, type: hlsManifestType };
   if (protocol === "dash") return { kind: "dash-manifest", manifestUrl: url };
   return { kind: "direct-url", url, headers };
+}
+
+function hlsContainerFromSegments(segmentRef: SegmentRef): Container {
+  if (segmentRef.kind !== "hls-segments") return "unknown";
+  const first = segmentRef.segmentUrls[0] ?? "";
+  if (/\.(ts|mpegts)(\?|#|$)/i.test(first)) return "mpegts";
+  if (/\.(m4s|mp4|m4v)(\?|#|$)/i.test(first)) return "fmp4";
+  return "unknown";
+}
+
+function mediaPlaylistVariant(
+  url: string,
+  media: ReturnType<typeof parseHlsMediaPlaylist>,
+  encryption: ReturnType<typeof interpretHlsEncryption>["encryption"],
+): Variant {
+  return {
+    id: `${url}#media` as Variant["id"],
+    width: null,
+    height: null,
+    frameRate: null,
+    bitrate: null,
+    estimatedSize: null,
+    videoCodec: null,
+    audioCodec: null,
+    audioRenditionId: null,
+    segmentRef: {
+      kind: "hls-segments",
+      playlistUrl: url,
+      segmentUrls: media.segments.map(s => s.uri),
+      encryption,
+    },
+  };
 }
 
 export async function classify(input: ClassifyInput): Promise<StreamDescriptor> {
@@ -119,6 +152,7 @@ export async function classify(input: ClassifyInput): Promise<StreamDescriptor> 
   let variants: Variant[] = [];
   let drm: DrmStatus = null;
   const codecs: CodecSet = { video: null, audio: null, subtitles: [] };
+  let hlsManifestType: "master" | "media" = "master";
 
   // Layer 3: manifest parse
   if (protocol === "hls" && input.manifestText) {
@@ -133,6 +167,13 @@ export async function classify(input: ClassifyInput): Promise<StreamDescriptor> 
         const media = parseHlsMediaPlaylist(input.manifestText, input.url);
         const enc = interpretHlsEncryption(media.encryption);
         if (enc.drm) drm = enc.drm;
+        hlsManifestType = "media";
+        const variant = mediaPlaylistVariant(input.url, media, enc.encryption);
+        variants = [variant];
+        container = hlsContainerFromSegments(variant.segmentRef);
+        if (container !== "unknown") {
+          confidence = { ...confidence, container: "probable" };
+        }
       } catch {
         // Not a media playlist; skip.
       }
@@ -168,7 +209,7 @@ export async function classify(input: ClassifyInput): Promise<StreamDescriptor> 
     pageUrl: input.pageUrl,
     title,
     detectedAt: Date.now(),
-    source: buildSource(input.url, protocol, input.headers),
+    source: buildSource(input.url, protocol, input.headers, hlsManifestType),
     protocol,
     container,
     codecs,

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createRouter, drmRefusalToError } from "../../../src/background/router";
 import { directDescriptor, hlsDescriptor, drmDescriptor, clearKeyDescriptor } from "../popup/helpers/descriptors";
-import type { UserChoice, StreamId, VariantId } from "@savemedia/core";
+import type { UserChoice, StreamDescriptor, StreamId, VariantId } from "@savemedia/core";
 
 function deps() {
   return {
@@ -43,6 +43,46 @@ describe("router — descriptor de-duplication", () => {
     r.addDescriptor(1, directDescriptor());
     r.clearTab(1);
     expect(r.listDescriptors(1)).toHaveLength(0);
+  });
+
+  it("drops an HLS media-playlist descriptor when its master variant is already known", () => {
+    const r = createRouter(deps());
+    const master = hlsDescriptor({
+      variants: [{
+        ...hlsDescriptor().variants[0]!,
+        segmentRef: {
+          kind: "hls-segments",
+          playlistUrl: "https://cdn/video/720p.m3u8",
+          segmentUrls: [],
+          encryption: null,
+        },
+      }],
+    });
+    const media = hlsMediaDescriptor("https://cdn/video/720p.m3u8");
+
+    expect(r.addDescriptor(1, master)).toBe(true);
+    expect(r.addDescriptor(1, media)).toBe(false);
+    expect(r.listDescriptors(1).map(d => d.id)).toEqual([master.id]);
+  });
+
+  it("replaces a standalone HLS media-playlist descriptor when its master arrives later", () => {
+    const r = createRouter(deps());
+    const media = hlsMediaDescriptor("https://cdn/video/720p.m3u8");
+    const master = hlsDescriptor({
+      variants: [{
+        ...hlsDescriptor().variants[0]!,
+        segmentRef: {
+          kind: "hls-segments",
+          playlistUrl: "https://cdn/video/720p.m3u8",
+          segmentUrls: [],
+          encryption: null,
+        },
+      }],
+    });
+
+    expect(r.addDescriptor(1, media)).toBe(true);
+    expect(r.addDescriptor(1, master)).toBe(true);
+    expect(r.listDescriptors(1).map(d => d.id)).toEqual([master.id]);
   });
 });
 
@@ -251,3 +291,20 @@ describe("drmRefusalToError", () => {
     expect(err.keySystem).toBe("unknown");
   });
 });
+
+function hlsMediaDescriptor(manifestUrl: string): StreamDescriptor {
+  return hlsDescriptor({
+    id: "stream-hls-media" as StreamId,
+    source: { kind: "hls-manifest", manifestUrl, type: "media" },
+    variants: [{
+      ...hlsDescriptor().variants[0]!,
+      id: `${manifestUrl}#media` as VariantId,
+      segmentRef: {
+        kind: "hls-segments",
+        playlistUrl: manifestUrl,
+        segmentUrls: [`${manifestUrl}/seg0.ts`],
+        encryption: null,
+      },
+    }],
+  });
+}

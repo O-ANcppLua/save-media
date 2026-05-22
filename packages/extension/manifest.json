@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "description": "Video downloader for direct files, HLS and DASH streams.",
   "minimum_chrome_version": "114",
-  "permissions": ["downloads", "storage", "tabs", "offscreen", "scripting"],
+  "permissions": ["downloads", "storage", "tabs", "offscreen", "scripting", "webRequest"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",

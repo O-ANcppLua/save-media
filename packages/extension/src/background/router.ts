@@ -15,6 +15,10 @@ import type {
 } from "../types/messages";
 import type { Logger } from "../util/logger";
 
+type HlsDescriptor = StreamDescriptor & {
+  readonly source: { readonly kind: "hls-manifest"; readonly manifestUrl: string; readonly type: "master" | "media" };
+};
+
 export interface TabState {
   readonly descriptors: Map<string, StreamDescriptor>;
 }
@@ -86,8 +90,48 @@ export function createRouter(deps: RouterDeps): Router {
     return `direct-family:${d.protocol}:${normalised}`;
   }
 
+  function hlsVariantPlaylistUrls(d: StreamDescriptor): Set<string> {
+    const urls = new Set<string>();
+    if (d.protocol !== "hls") return urls;
+    for (const v of d.variants) {
+      if (v.segmentRef.kind === "hls-segments") urls.add(v.segmentRef.playlistUrl);
+    }
+    return urls;
+  }
+
+  function isHlsMediaPlaylist(d: StreamDescriptor): d is HlsDescriptor & { readonly source: HlsDescriptor["source"] & { readonly type: "media" } } {
+    return d.source.kind === "hls-manifest" && d.source.type === "media";
+  }
+
+  function isHlsMasterPlaylist(d: StreamDescriptor): d is HlsDescriptor & { readonly source: HlsDescriptor["source"] & { readonly type: "master" } } {
+    return d.source.kind === "hls-manifest" && d.source.type === "master";
+  }
+
+  function removeCoveredHlsMediaDescriptors(state: TabState, master: StreamDescriptor): void {
+    const covered = hlsVariantPlaylistUrls(master);
+    if (covered.size === 0) return;
+    for (const [k, existing] of state.descriptors.entries()) {
+      if (isHlsMediaPlaylist(existing) && covered.has(existing.source.manifestUrl)) {
+        state.descriptors.delete(k);
+      }
+    }
+  }
+
+  function hlsMediaCoveredByExistingMaster(state: TabState, media: StreamDescriptor): boolean {
+    if (!isHlsMediaPlaylist(media)) return false;
+    for (const existing of state.descriptors.values()) {
+      if (isHlsMasterPlaylist(existing) && hlsVariantPlaylistUrls(existing).has(media.source.manifestUrl)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function addDescriptor(tabId: number, descriptor: StreamDescriptor): boolean {
     const state = getTab(tabId);
+    if (hlsMediaCoveredByExistingMaster(state, descriptor)) return false;
+    if (isHlsMasterPlaylist(descriptor)) removeCoveredHlsMediaDescriptors(state, descriptor);
+
     const key = descriptorKey(descriptor);
     if (state.descriptors.has(key)) return false;
     const family = segmentFamilyKey(descriptor);

@@ -11,7 +11,7 @@
 export {};
 const BRIDGE_TAG = "__savemedia" as const;
 
-type CaptureKind = "fetch" | "xhr" | "media-element" | "media-source" | "eme" | "ms-probe";
+type CaptureKind = "media-element" | "media-source" | "eme" | "ms-probe";
 interface MainToBridgeMessage {
   [BRIDGE_TAG]: true;
   kind: CaptureKind;
@@ -47,41 +47,28 @@ const emit = (kind: CaptureKind, url: string | null, extras: Partial<MainToBridg
 };
 
 /**
- * Match URLs that are the entry point of a stream — manifests or full
- * progressive files — NOT individual segments. CMAF/HLS-fMP4 segments
- * end in `.m4s` and DASH/HLS-TS segments end in `.ts`/`.m4s`. The
- * engine walks segments via the master/media playlist on its own; if
- * we surface them as separate descriptors the popup fills with N+1
- * "fake" items per stream and the user ends up downloading one chunk
- * instead of the whole video.
- *
- * `.ts` is intentionally excluded too (collides with TypeScript files
- * and tooling URLs; standalone MPEG-TS files almost never have this
- * extension on the open web).
+ * Resource timing gives us a passive page-side fallback for very early
+ * manifest requests without monkey-patching fetch/XHR. The background
+ * webRequest listener is the main discovery path; this catches entries
+ * that raced ahead during extension startup.
  */
-function looksLikeMedia(url: string): boolean {
-  if (!url) return false;
+function looksLikeMediaEntry(url: string): boolean {
   return /\.(m3u8|mpd|mp4|m4v|webm|mkv|mov|avi|flv|wmv)(\?|#|$)/i.test(url);
 }
 
-const _fetch = window.fetch;
-window.fetch = function (input, init) {
-  try {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input?.url ?? null;
-    if (url && looksLikeMedia(url)) emit("fetch", url);
-  } catch { /* swallow — never break the page */ }
-  return _fetch.apply(this, [input, init]);
-};
+function observeResourceUrl(url: string): void {
+  if (looksLikeMediaEntry(url)) emit("media-source", url);
+}
 
-const _xhrOpen = XMLHttpRequest.prototype.open;
-XMLHttpRequest.prototype.open = function (method, url, ...rest: unknown[]) {
-  try {
-    const str = String(url);
-    if (looksLikeMedia(str)) emit("xhr", str);
-  } catch { /* */ }
-  // @ts-expect-error variadic forward
-  return _xhrOpen.call(this, method, url, ...rest);
-};
+try {
+  performance.getEntriesByType("resource").forEach(entry => observeResourceUrl(entry.name));
+  const observer = new PerformanceObserver(list => {
+    list.getEntries().forEach(entry => observeResourceUrl(entry.name));
+  });
+  observer.observe({ type: "resource", buffered: true });
+} catch {
+  // Resource timing is best-effort; never perturb the page.
+}
 
 if (typeof MediaSource !== "undefined") {
   const _isTypeSupported = MediaSource.isTypeSupported.bind(MediaSource);

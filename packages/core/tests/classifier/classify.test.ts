@@ -43,6 +43,44 @@ describe("classify orchestration", () => {
     expect(d.drm).toBeNull();
   });
 
+  it("HLS media playlist → single downloadable variant for the playlist itself", async () => {
+    const d = await classify({
+      tabId: 1,
+      pageUrl: "https://example.com/page",
+      url: "https://cdn/video/1080p.m3u8",
+      headers: { "content-type": "application/vnd.apple.mpegurl" },
+      bodyBytes: null,
+      manifestText: `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:5
+#EXT-X-MEDIA-SEQUENCE:1
+#EXTINF:4.0,
+seg-1.ts
+#EXTINF:4.0,
+seg-2.ts
+#EXT-X-ENDLIST
+`,
+    });
+
+    expect(d.protocol).toBe("hls");
+    expect(d.source).toMatchObject({
+      kind: "hls-manifest",
+      manifestUrl: "https://cdn/video/1080p.m3u8",
+      type: "media",
+    });
+    expect(d.container).toBe("mpegts");
+    expect(d.variants).toHaveLength(1);
+    expect(d.variants[0]?.segmentRef).toMatchObject({
+      kind: "hls-segments",
+      playlistUrl: "https://cdn/video/1080p.m3u8",
+      segmentUrls: [
+        "https://cdn/video/seg-1.ts",
+        "https://cdn/video/seg-2.ts",
+      ],
+      encryption: null,
+    });
+  });
+
   it("DASH MPD with Widevine → drmBlocked", async () => {
     const d = await classify({
       tabId: 1,

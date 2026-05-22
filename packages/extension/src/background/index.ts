@@ -10,6 +10,7 @@ import type {
   EngineToBackgroundMessage,
 } from "../types/messages";
 import { createRouter } from "./router";
+import { registerNetworkCapture } from "./network-capture";
 import { ensureEngineHost } from "../platform/processor-host";
 import { consoleLogger } from "../util/logger";
 
@@ -81,6 +82,8 @@ async function handleCapture(
   const added = router.addDescriptor(tabId, descriptor);
   if (added) updateBadge(tabId);
 }
+
+registerNetworkCapture(handleCapture);
 
 function updateBadge(tabId: number): void {
   const count = router.listDescriptors(tabId).length;
