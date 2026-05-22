@@ -1,0 +1,13 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  width: 380px;
+  min-height: 420px;
+  background: theme('colors.ink');
+  color: #eaeaea;
+  font: 13px/1.4 system-ui, sans-serif;
+  overflow-y: auto;
+}

@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "savemedia",
+  "version": "0.0.1",
+  "description": "Video downloader for direct files, HLS and DASH streams.",
+  "minimum_chrome_version": "114",
+  "permissions": ["downloads", "storage", "tabs", "offscreen", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_title": "savemedia"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["content-main.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
