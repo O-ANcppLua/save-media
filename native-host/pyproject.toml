@@ -22,6 +22,9 @@ dev = [
 where = ["."]
 include = ["savemedia_host*"]
 
+[project.scripts]
+savemedia-host-installer = "savemedia_host.installer:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
