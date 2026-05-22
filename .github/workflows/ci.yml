@@ -1,0 +1,121 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-typescript:
+    name: Unit (TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.11.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r typecheck
+      - run: pnpm -r test
+
+  unit-python:
+    name: Unit (Python native host)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native-host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .[dev]
+      - run: pytest -q
+
+  build-extension:
+    name: Build extension (${{ matrix.target }})
+    needs: unit-typescript
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [chrome, firefox]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.11.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @savemedia/extension build:${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: savemedia-${{ matrix.target }}
+          path: packages/extension/dist-${{ matrix.target }}/
+          if-no-files-found: error
+
+  e2e:
+    name: E2E (Playwright ${{ matrix.browser }})
+    needs: build-extension
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.11.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @savemedia/extension exec playwright install --with-deps ${{ matrix.browser }}
+      - run: pnpm --filter @savemedia/extension build:chrome
+      - run: pnpm --filter @savemedia/extension exec playwright test --project=${{ matrix.browser }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.browser }}
+          path: packages/extension/playwright-report/
+
+  pyinstaller:
+    name: PyInstaller (${{ matrix.os }})
+    needs: unit-python
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: savemedia-host-darwin-arm64
+          - os: ubuntu-latest
+            artifact: savemedia-host-linux-x64
+          - os: windows-latest
+            artifact: savemedia-host-windows-x64.exe
+    defaults:
+      run:
+        working-directory: native-host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e .[dev]
+      - run: pyinstaller build.spec --clean --noconfirm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: native-host/dist/
+          if-no-files-found: error
