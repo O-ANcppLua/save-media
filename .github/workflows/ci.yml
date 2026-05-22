@@ -87,7 +87,10 @@ jobs:
       - run: pnpm --filter @savemedia/core build
       - run: pnpm --filter @savemedia/extension exec playwright install --with-deps ${{ matrix.browser }}
       - run: pnpm --filter @savemedia/extension build:chrome
-      - run: pnpm --filter @savemedia/extension exec playwright test --project=${{ matrix.browser }}
+      # Loading the unpacked MV3 extension via --load-extension requires
+      # `headless: false`, which on Linux CI needs an X display. xvfb is
+      # pre-installed on ubuntu-latest; the -a flag picks a free DISPLAY.
+      - run: xvfb-run -a pnpm --filter @savemedia/extension exec playwright test --project=${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
