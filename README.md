@@ -1,13 +1,15 @@
 # savemedia
 
-Browser extension for saving browser-visible video streams. It is intentionally
-small: direct files, HLS, DASH, and honest refusal when the stream cannot be
-saved without broken output or unsupported decryption.
+Browser extension for saving browser-visible video streams. The repository has
+one support contract: direct files, tested HLS/DASH paths, and honest refusal
+when the stream cannot be saved without broken output or unsupported
+decryption.
 
 This is not a DRM bypass tool. It does not use a native host, yt-dlp,
-ffmpeg.wasm, or hidden remote services.
+ffmpeg.wasm, or hidden remote services. Unsupported paths are unsupported; the
+docs do not split them into roadmap buckets.
 
-## What Works
+## Supported
 
 Verified in the Chrome Playwright extension suite with real ffmpeg-generated
 golden media fixtures:
@@ -25,7 +27,7 @@ golden media fixtures:
 The engine aborts and deletes partial in-memory output when a required segment
 fails. It should not save random chunk files or mislabeled `.ts` files as video.
 
-## Current Limits
+## Unsupported
 
 - No DRM circumvention: Widevine, PlayReady, FairPlay, SAMPLE-AES, and encrypted
   EME paths are refused.
@@ -44,13 +46,12 @@ fails. It should not save random chunk files or mislabeled `.ts` files as video.
 
 | Browser target | Current evidence | Claim level |
 | --- | --- | --- |
-| Chrome | Automated unpacked-extension Playwright suite, including golden downloadable media verified with `ffprobe`. | Supported for the features listed above. |
+| Chrome | Automated unpacked-extension Playwright suite, including golden downloadable media verified with `ffprobe`. | Supported for the capabilities listed above. |
 | Edge | Builds from the same Chromium bundle and packages as `savemedia-edge-0.0.1.zip`. No independent Edge runtime smoke test is currently checked in. | Build exists; runtime parity is not claimed. |
 | Firefox | Firefox bundle builds. CI/Playwright currently runs baseline fixture-server checks only; extension behavior is skipped because Firefox MV3 loading needs a separate `web-ext` harness. | Build exists; extension runtime is not verified yet. |
 
-Do not submit this to browser stores as a polished public product until Edge and
-Firefox have real runtime smoke tests and the store listing matches the matrix
-above.
+Browser store submission is outside the verified repository contract. Any store
+listing must match the browser evidence above.
 
 ## Architecture
 

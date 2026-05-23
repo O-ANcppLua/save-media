@@ -1,7 +1,8 @@
-# savemedia Current Design
+# savemedia Design
 
-This document describes the code that is actually shipped in this repository.
-It deliberately avoids store-readiness claims and planned features.
+This document describes the repository's single supported product contract. It
+does not split behavior into roadmap buckets: a path is supported, unsupported,
+or not verified.
 
 ## Product Boundary
 
@@ -19,7 +20,7 @@ It refuses instead of guessing when any of these are true:
 The extension must not save `.jpg`, `.jpeg`, `.png`, `.gif`, `.css`, `.js`,
 `.html`, random segments, or mislabeled files as video downloads.
 
-## Shipped Capabilities
+## Supported Capabilities
 
 | Capability | Status | Verification |
 | --- | --- | --- |
@@ -30,19 +31,19 @@ The extension must not save `.jpg`, `.jpeg`, `.png`, `.gif`, `.css`, `.js`,
 | HLS fMP4/CMAF detection | Works | Chrome e2e verifies init/fragment URLs are not surfaced as standalone downloads. |
 | DASH fMP4 SegmentList download | Works for tested single-video path | Chrome e2e downloads real init+media fixture and verifies MP4. |
 | DRM detection | Works | Widevine fixture is refused with `cdm_required`. |
-| ClearKey/CENC detection | Works | ClearKey fixture is refused with `clearkey_deferred`; decryption is not implemented. |
+| ClearKey/CENC detection | Works | ClearKey fixture is refused; decryption is not implemented. |
 | `Alt+S` best download command | Registered and manually tested in Chrome | Automated test checks command registration; headed Playwright does not fire extension shortcuts reliably. |
 | Edge runtime | Not verified | Chromium zip is built, but no Edge smoke test exists. |
 | Firefox runtime | Not verified | Firefox zip is built; Playwright project currently covers fixture pages only. |
 
-## Not Shipped
+## Unsupported
 
 - Native messaging host, yt-dlp integration, ffmpeg integration, or >2 GiB
   streaming sink.
 - ffmpeg.wasm or browser-side transcoding.
 - "Small file", "best quality transcode", or arbitrary MP4 conversion modes.
 - ClearKey/CENC sample decryption.
-- Store submission assets or store compliance review.
+- Browser store submission assets or store compliance review.
 - Mobile browser support.
 - Side panel UI, subtitles, telemetry, cross-device sync.
 
@@ -51,7 +52,7 @@ The extension must not save `.jpg`, `.jpeg`, `.png`, `.gif`, `.css`, `.js`,
 ```
 Page MAIN world
   content-main.js
-  fetch/XMLHttpRequest/media/EME observation only
+  resource timing, media-element, MediaSource, and EME observation only
         |
         v
 Page ISOLATED world
@@ -73,7 +74,7 @@ chrome.downloads.download
 ```
 
 Firefox has a separate build target, but the extension runtime path is not
-currently proven by e2e. Do not infer Firefox support from Chrome passing.
+currently proven by e2e. Chrome passing is not Firefox evidence.
 
 ## Classification Rules
 
@@ -123,8 +124,8 @@ The tested path is one video representation with an init segment and fMP4 media
 segments. MPD segment URLs are resolved through `mpd-parser`'s `resolvedUri`
 fields so relative `SegmentList` entries fetch from the manifest origin.
 
-Separate audio/video adaptation merging and more exotic MPD layouts need golden
-fixtures before they can be claimed.
+Separate audio/video adaptation merging and more exotic MPD layouts are
+unsupported unless a deterministic golden fixture proves them.
 
 ## Failure Reasons
 
@@ -156,5 +157,5 @@ created" problem.
 - Firefox e2e currently exercises the fixture server without loading the
   extension. This is intentionally documented as a gap.
 
-Every new advertised protocol/container path needs a golden fixture plus a
-playback/`ffprobe` assertion before README support claims are updated.
+Any advertised protocol/container path needs a golden fixture plus a
+playback/`ffprobe` assertion.
