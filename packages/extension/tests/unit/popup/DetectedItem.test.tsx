@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DetectedItem } from "../../../src/popup/components/DetectedItem";
-import { directDescriptor, hlsDescriptor, drmDescriptor, clearKeyDescriptor } from "./helpers/descriptors";
+import { directDescriptor, hlsDescriptor, dashDescriptor, drmDescriptor, clearKeyDescriptor } from "./helpers/descriptors";
 import type { StreamId } from "@savemedia/core";
 
 describe("DetectedItem — DRM/ClearKey cards", () => {
@@ -57,6 +57,14 @@ describe("DetectedItem — HLS card output action label", () => {
   });
 });
 
+describe("DetectedItem — unsupported stream card", () => {
+  it("renders DASH as an explicit refusal with no download button", () => {
+    render(<ul>{<DetectedItem descriptor={dashDescriptor()} />}</ul>);
+    expect(screen.getByTestId("unsupported-card").textContent).toMatch(/DASH detected/i);
+    expect(screen.queryByRole("button", { name: /download/i })).toBeNull();
+  });
+});
+
 describe("DetectedItem — progress + error + complete states", () => {
   it("shows active progress bar with phase + bytes", () => {
     render(
@@ -82,6 +90,19 @@ describe("DetectedItem — progress + error + complete states", () => {
     );
     expect(screen.getByTestId("job-error")).toBeTruthy();
     expect(screen.getByText(/manifest unavailable/i)).toBeTruthy();
+  });
+
+  it("renders HLS runtime refusal messages after a failed attempt", () => {
+    render(
+      <ul>
+        <DetectedItem
+          descriptor={hlsDescriptor()}
+          status={{ phase: "failed", error: { code: "hls_live_unsupported", severity: "terminal", manifestUrl: "https://x/live.m3u8" } }}
+        />
+      </ul>,
+    );
+    expect(screen.getByTestId("job-error")).toBeTruthy();
+    expect(screen.getByText(/Live HLS is not supported/i)).toBeTruthy();
   });
 
   it("renders complete checkmark when complete", () => {

@@ -20,12 +20,12 @@ describe("message types", () => {
   it("MainToBridgeMessage carries the discriminator key set to true", () => {
     const msg: MainToBridgeMessage = {
       [MAIN_BRIDGE_TAG]: true,
-      kind: "fetch",
+      kind: "media-source",
       url: "https://x/clip.mp4",
       pageUrl: "https://x/",
     };
     expect(msg[MAIN_BRIDGE_TAG]).toBe(true);
-    expect(msg.kind).toBe("fetch");
+    expect(msg.kind).toBe("media-source");
   });
 
   it("BridgeToBackgroundMessage 'capture' wraps a MainToBridgeMessage payload", () => {
@@ -33,7 +33,7 @@ describe("message types", () => {
       type: "capture",
       payload: {
         [MAIN_BRIDGE_TAG]: true,
-        kind: "fetch",
+        kind: "media-source",
         url: "https://x/clip.mp4",
         pageUrl: "https://x/",
       },

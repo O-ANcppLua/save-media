@@ -180,6 +180,42 @@ test.describe("extension classifies real fixture pages", () => {
     });
   }
 
+  async function startDescriptorDownloadExpectFailure(descriptor: Descriptor, filename: string): Promise<string> {
+    const variant = [...(descriptor.variants ?? [])].sort((a, b) => {
+      const height = (b.height ?? 0) - (a.height ?? 0);
+      if (height !== 0) return height;
+      return (b.bitrate ?? 0) - (a.bitrate ?? 0);
+    })[0];
+    return await probe!.evaluate(async ({ streamId, name, variantId, audioRenditionId }) => {
+      const failure = new Promise<string>(resolve => {
+        const listener = (msg: unknown) => {
+          const m = msg as { type?: string; streamId?: string; error?: { code?: string } };
+          if (m.type === "job-failed" && m.streamId === streamId) {
+            chrome.runtime.onMessage.removeListener(listener);
+            resolve(m.error?.code ?? "unknown");
+          }
+        };
+        chrome.runtime.onMessage.addListener(listener);
+      });
+      chrome.runtime.sendMessage({
+        type: "download",
+        streamId,
+        choice: {
+          outputMode: "Original",
+          filename: name,
+          variantId,
+          audioRenditionId,
+        },
+      });
+      return await failure;
+    }, {
+      streamId: descriptor.id,
+      name: filename,
+      variantId: variant?.id ?? null,
+      audioRenditionId: variant?.audioRenditionId ?? null,
+    });
+  }
+
   test("direct MP4 fixture produces a progressive-http descriptor with directDownload", async () => {
     const descriptors = await waitForDescriptors("direct", ds => ds.some(d => d.protocol === "progressive-http"));
     const direct = descriptors.find(d => d.protocol === "progressive-http");
@@ -288,29 +324,53 @@ test.describe("extension classifies real fixture pages", () => {
     }
   });
 
-  test("download pipeline saves HLS AES-128 with reachable key as a playable MP4", async () => {
+  test("download pipeline refuses HLS AES-128 instead of writing decrypted or encrypted bytes", async () => {
     await clearDownloadHistory();
     const page = await openFixtureAndWait("hls-aes", ds => ds.some(d => d.protocol === "hls"));
     try {
       const descriptor = (await descriptorsForUrlContaining("/page/hls-aes.html")).find(d => d.protocol === "hls");
       expect(descriptor).toBeDefined();
-      await startDescriptorDownload(descriptor!, "e2e-hls-aes.mp4");
-      const file = await waitForCompletedDownload(page, "e2e-hls-aes.mp4");
-      expectPlayable(file, /mp4|mov/);
+      await expect(startDescriptorDownloadExpectFailure(descriptor!, "e2e-hls-aes.mp4"))
+        .resolves.toBe("hls_encryption_unsupported");
     } finally {
       await page.close();
     }
   });
 
-  test("download pipeline saves DASH fMP4 as a playable MP4", async () => {
+  test("download pipeline refuses HLS fMP4/CMAF instead of saving fragments", async () => {
+    await clearDownloadHistory();
+    const page = await openFixtureAndWait("hls-fmp4", ds => ds.some(d => d.protocol === "hls"));
+    try {
+      const descriptor = (await descriptorsForUrlContaining("/page/hls-fmp4.html")).find(d => d.protocol === "hls");
+      expect(descriptor).toBeDefined();
+      await expect(startDescriptorDownloadExpectFailure(descriptor!, "e2e-hls-fmp4.mp4"))
+        .resolves.toBe("hls_layout_unsupported");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("download pipeline refuses HLS live/sliding-window playlists", async () => {
+    await clearDownloadHistory();
+    const page = await openFixtureAndWait("hls-live", ds => ds.some(d => d.protocol === "hls"));
+    try {
+      const descriptor = (await descriptorsForUrlContaining("/page/hls-live.html")).find(d => d.protocol === "hls");
+      expect(descriptor).toBeDefined();
+      await expect(startDescriptorDownloadExpectFailure(descriptor!, "e2e-hls-live.mp4"))
+        .resolves.toBe("hls_live_unsupported");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("download pipeline refuses DASH instead of attempting a partial MPD assembly", async () => {
     await clearDownloadHistory();
     const page = await openFixtureAndWait("dash", ds => ds.some(d => d.protocol === "dash"));
     try {
       const descriptor = (await descriptorsForUrlContaining("/page/dash.html")).find(d => d.protocol === "dash");
       expect(descriptor).toBeDefined();
-      await startDescriptorDownload(descriptor!, "e2e-dash.mp4");
-      const file = await waitForCompletedDownload(page, "e2e-dash.mp4");
-      expectPlayable(file, /mp4|mov/);
+      await expect(startDescriptorDownloadExpectFailure(descriptor!, "e2e-dash.mp4"))
+        .resolves.toBe("dash_unsupported");
     } finally {
       await page.close();
     }

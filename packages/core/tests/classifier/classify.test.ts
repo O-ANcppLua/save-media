@@ -29,6 +29,36 @@ describe("classify orchestration", () => {
     expect(d.capabilities.directDownload).toBe(true);
   });
 
+  it(".mp4 URL alone is only a hint, not permission to download", async () => {
+    const d = await classify({
+      tabId: 1,
+      pageUrl: "https://example.com/page",
+      url: "https://cdn.example.com/fake.mp4",
+      headers: {},
+      bodyBytes: null,
+      manifestText: null,
+    });
+
+    expect(d.protocol).toBe("unknown");
+    expect(d.container).toBe("mp4");
+    expect(d.confidence.container).toBe("guessed");
+    expect(d.capabilities.directDownload).toBe(false);
+  });
+
+  it("fake .mp4 returning HTML is not a direct download", async () => {
+    const d = await classify({
+      tabId: 1,
+      pageUrl: "https://example.com/page",
+      url: "https://cdn.example.com/fake.mp4",
+      headers: { "content-type": "text/html" },
+      bodyBytes: new TextEncoder().encode("<html></html>"),
+      manifestText: null,
+    });
+
+    expect(d.protocol).toBe("unknown");
+    expect(d.capabilities.directDownload).toBe(false);
+  });
+
   it("HLS master playlist → variants populated", async () => {
     const d = await classify({
       tabId: 1,

@@ -10,8 +10,6 @@ import type {
   DispatchRefusal,
   DirectPlan,
   HlsPlainPlan,
-  HlsAesPlan,
-  DashPlan,
 } from "../types/job";
 import type { Variant, HlsEncryption } from "../types/codec";
 import { interpretHlsEncryption } from "../parser/hls/encryption";
@@ -52,7 +50,7 @@ function resolveOutputContainer(descriptor: StreamDescriptor, choice: UserChoice
   return asOutputContainer(descriptor.container);
 }
 
-function hlsEncryptionFor(descriptor: StreamDescriptor): { kind: "clear" | "aes-128" | "drm-blocked"; encryption: HlsEncryption | null } {
+function hlsEncryptionFor(descriptor: StreamDescriptor): { kind: "clear" | "encrypted" | "drm-blocked"; encryption: HlsEncryption | null } {
   // Encryption may be carried on the variant segment-ref or surfaced via
   // descriptor.drm. We only reach this branch when descriptor.drm is null
   // (otherwise dispatch returns refuse before us).
@@ -61,7 +59,7 @@ function hlsEncryptionFor(descriptor: StreamDescriptor): { kind: "clear" | "aes-
       const enc = v.segmentRef.encryption;
       const verdict = interpretHlsEncryption({ method: enc.method, uri: enc.keyUri, iv: enc.iv });
       if (verdict.treatedAs === "decryptable" && verdict.encryption) {
-        return { kind: "aes-128", encryption: verdict.encryption };
+        return { kind: "encrypted", encryption: verdict.encryption };
       }
       if (verdict.treatedAs === "drm-blocked") {
         return { kind: "drm-blocked", encryption: null };
@@ -79,7 +77,6 @@ function buildHlsPlainPlan(
 ): HlsPlainPlan {
   const estimatedBytes = estimateSize(variant);
   const steps: JobStep[] = [
-    { op: "fetch-init-segment", url: "" },
     { op: "remux", toContainer: outputContainer },
     { op: "verify", checks: ["segment-count", "container-validity"] },
     { op: "finalize", sink: "downloads" },
@@ -90,57 +87,6 @@ function buildHlsPlainPlan(
     outputContainer,
     outputFilename: choice.filename,
     variantId: variant.id,
-    estimatedBytes,
-  };
-}
-
-function buildHlsAesPlan(
-  _descriptor: StreamDescriptor,
-  choice: UserChoice,
-  variant: Variant,
-  outputContainer: OutputContainer,
-  encryption: HlsEncryption,
-): HlsAesPlan {
-  const estimatedBytes = estimateSize(variant);
-  const steps: JobStep[] = [
-    { op: "fetch-key", url: encryption.keyUri },
-    { op: "decrypt-aes-128", segmentIndex: 0, keyHandle: encryption.keyUri as unknown as Parameters<(k: import("../types/job").KeyHandle) => void>[0] },
-    { op: "remux", toContainer: outputContainer },
-    { op: "verify", checks: ["segment-count", "container-validity"] },
-    { op: "finalize", sink: "downloads" },
-  ];
-  return {
-    kind: "hls-aes",
-    steps,
-    outputContainer,
-    outputFilename: choice.filename,
-    variantId: variant.id,
-    estimatedBytes,
-    keyUri: encryption.keyUri,
-    encryption,
-  };
-}
-
-function buildDashPlan(
-  _descriptor: StreamDescriptor,
-  choice: UserChoice,
-  variant: Variant,
-  outputContainer: OutputContainer,
-): DashPlan {
-  const estimatedBytes = estimateSize(variant);
-  const steps: JobStep[] = [
-    { op: "fetch-init-segment", url: "" },
-    { op: "remux", toContainer: outputContainer },
-    { op: "verify", checks: ["segment-count", "container-validity"] },
-    { op: "finalize", sink: "downloads" },
-  ];
-  return {
-    kind: "dash",
-    steps,
-    outputContainer,
-    outputFilename: choice.filename,
-    variantId: variant.id,
-    audioRenditionId: choice.audioRenditionId,
     estimatedBytes,
   };
 }
@@ -176,21 +122,14 @@ export function dispatch(descriptor: StreamDescriptor, choice: UserChoice): JobP
     if (enc.kind === "drm-blocked") {
       return { kind: "refuse", reason: "cdm_required" };
     }
-    if (enc.kind === "aes-128" && enc.encryption) {
-      return buildHlsAesPlan(descriptor, choice, variant, outputContainer, enc.encryption);
+    if (enc.kind === "encrypted") {
+      return { kind: "refuse", reason: "hls_encryption_unsupported" };
     }
     return buildHlsPlainPlan(descriptor, choice, variant, outputContainer);
   }
 
   if (descriptor.protocol === "dash") {
-    const variant = pickVariant(descriptor, choice);
-    if (!variant) {
-      return { kind: "refuse", reason: "no_usable_variant" };
-    }
-    if (tooLargeForBrowser(estimateSize(variant))) {
-      return { kind: "refuse", reason: "output_too_large_for_browser" };
-    }
-    return buildDashPlan(descriptor, choice, variant, outputContainer);
+    return { kind: "refuse", reason: "dash_unsupported" };
   }
 
   // Progressive: pick direct if Original (or the requested output already
@@ -205,10 +144,7 @@ export function dispatch(descriptor: StreamDescriptor, choice: UserChoice): JobP
     return { kind: "refuse", reason: "unsupported_output" };
   }
 
-  // Unknown protocol with direct URL → fall through to direct as best effort.
-  const direct = buildDirectPlan(descriptor, choice);
-  if (direct) return direct;
   return { kind: "refuse", reason: "unsupported_output" };
 }
 
-export type { DirectPlan, HlsPlainPlan, HlsAesPlan, DashPlan };
+export type { DirectPlan, HlsPlainPlan };

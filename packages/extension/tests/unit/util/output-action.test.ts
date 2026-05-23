@@ -23,33 +23,6 @@ describe("outputActionFromPlan", () => {
     expect(outputActionFromPlan(p)).toBe("hls-plain");
   });
 
-  it("maps hls-aes plan to hls-aes", () => {
-    const p: JobPlan = {
-      kind: "hls-aes",
-      steps: [],
-      outputContainer: baseMp4,
-      outputFilename: "clip.mp4",
-      variantId: varId,
-      estimatedBytes: null,
-      keyUri: "https://x/key",
-      encryption: { method: "AES-128", keyUri: "https://x/key", iv: null },
-    };
-    expect(outputActionFromPlan(p)).toBe("hls-aes");
-  });
-
-  it("maps dash plan to dash", () => {
-    const p: JobPlan = {
-      kind: "dash",
-      steps: [],
-      outputContainer: baseMp4,
-      outputFilename: "clip.mp4",
-      variantId: varId,
-      audioRenditionId: null,
-      estimatedBytes: null,
-    };
-    expect(outputActionFromPlan(p)).toBe("dash");
-  });
-
   it("maps refusal to refused", () => {
     const r: DispatchRefusal = { kind: "refuse", reason: "cdm_required" };
     expect(outputActionFromPlan(r)).toBe("refused");

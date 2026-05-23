@@ -7,8 +7,6 @@ import type {
 export const MAIN_BRIDGE_TAG = "__savemedia" as const;
 
 export type CaptureKind =
-  | "fetch"
-  | "xhr"
   | "media-element"
   | "media-source"
   | "eme"

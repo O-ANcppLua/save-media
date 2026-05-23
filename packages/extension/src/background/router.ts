@@ -190,7 +190,7 @@ export function createRouter(deps: RouterDeps): Router {
 
   function bestDescriptorScore(d: StreamDescriptor): [number, number, number, number] {
     const variant = bestVariant(d);
-    const protocolRank = d.protocol === "hls" || d.protocol === "dash"
+    const protocolRank = d.protocol === "hls"
       ? 3
       : d.protocol === "progressive-http"
         ? 2
@@ -223,9 +223,14 @@ export function createRouter(deps: RouterDeps): Router {
     };
   }
 
+  function isDownloadableCandidate(d: StreamDescriptor): boolean {
+    return !d.capabilities.drmBlocked
+      && (d.capabilities.directDownload || d.protocol === "hls");
+  }
+
   async function startBestDownload(tabId: number): Promise<{ streamId: StreamDescriptor["id"]; error: JobError } | null> {
     const descriptor = [...listDescriptors(tabId)]
-      .filter(d => !d.capabilities.drmBlocked)
+      .filter(isDownloadableCandidate)
       .sort(compareBestDescriptors)[0];
     if (!descriptor) return null;
 
@@ -381,5 +386,11 @@ export function dispatchRefusalToError(reason: DispatchRefusalReason, d: StreamD
         estimatedBytes: Math.max(...d.variants.map(v => v.estimatedSize ?? 0), 0),
         limitBytes: BROWSER_OUTPUT_LIMIT_BYTES,
       };
+    case "dash_unsupported":
+      return { code: "dash_unsupported", severity: "terminal", manifestUrl: d.source.kind === "dash-manifest" ? d.source.manifestUrl : d.pageUrl };
+    case "hls_encryption_unsupported":
+      return { code: "hls_encryption_unsupported", severity: "terminal", manifestUrl: d.source.kind === "hls-manifest" ? d.source.manifestUrl : d.pageUrl, method: "AES-128" };
+    case "hls_live_unsupported":
+      return { code: "hls_live_unsupported", severity: "terminal", manifestUrl: d.source.kind === "hls-manifest" ? d.source.manifestUrl : d.pageUrl };
   }
 }

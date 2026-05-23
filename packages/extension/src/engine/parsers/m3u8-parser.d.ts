@@ -19,6 +19,7 @@ declare module "m3u8-parser" {
         map?: { uri: string; byterange?: { length: number; offset: number } };
         byterange?: { length: number; offset: number };
       }>;
+      endList?: boolean;
       contentProtection?: Record<
         string,
         {

@@ -31,6 +31,7 @@ export interface RuntimePlaylist {
   readonly initSegmentUrl: string | null;
   readonly segments: readonly RuntimeSegment[];
   readonly targetDuration: number | null;
+  readonly isVod: boolean;
   readonly encryption: RuntimeEncryption | null;
 }
 
@@ -61,6 +62,7 @@ export function parseHlsMediaPlaylistRuntime(text: string, playlistUrl: string):
     initSegmentUrl: firstMap?.uri ? new URL(firstMap.uri, playlistUrl).href : null,
     segments: segs,
     targetDuration: typeof m.targetDuration === "number" ? m.targetDuration : null,
+    isVod: m.endList === true,
     encryption,
   };
 }

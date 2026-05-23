@@ -14,6 +14,7 @@ import { registerDownloadBestCommand } from "./download-best";
 import { registerNetworkCapture } from "./network-capture";
 import { ensureEngineHost } from "../platform/processor-host";
 import { consoleLogger } from "../util/logger";
+import type { StreamDescriptor } from "@savemedia/core";
 
 declare const __BROWSER__: "chromium" | "firefox";
 
@@ -80,8 +81,15 @@ async function handleCapture(
     manifestText,
   });
 
+  if (!shouldSurfaceDescriptor(descriptor)) return;
   const added = router.addDescriptor(tabId, descriptor);
   if (added) updateBadge(tabId);
+}
+
+function shouldSurfaceDescriptor(descriptor: StreamDescriptor): boolean {
+  if (descriptor.drm) return true;
+  if (descriptor.capabilities.directDownload) return true;
+  return descriptor.protocol === "hls" || descriptor.protocol === "dash";
 }
 
 registerNetworkCapture(handleCapture);

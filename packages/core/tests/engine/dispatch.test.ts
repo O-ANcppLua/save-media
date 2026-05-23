@@ -57,7 +57,7 @@ function makeHls(encryption: HlsEncryption | null = null): StreamDescriptor {
     detectedAt: 0,
     source: { kind: "hls-manifest", manifestUrl: "https://x/master.m3u8", type: "master" },
     protocol: "hls",
-    container: "fmp4",
+    container: "mpegts",
     codecs: { video: null, audio: null, subtitles: [] },
     variants: [
       variant({
@@ -160,17 +160,11 @@ describe("dispatch — HLS", () => {
     }
   });
 
-  it("AES-128 HLS → hls-aes plan with key URI + steps including fetch-key + decrypt", () => {
+  it("AES-128 HLS → refuses instead of producing a decrypt plan", () => {
     const enc: HlsEncryption = { method: "AES-128", keyUri: "https://x/key.bin", iv: null };
     const d = makeHls(enc);
     const r = dispatch(d, originalChoice);
-    expect(r.kind).toBe("hls-aes");
-    if (r.kind === "hls-aes") {
-      expect(r.keyUri).toBe("https://x/key.bin");
-      expect(r.encryption.method).toBe("AES-128");
-      expect(r.steps.find(s => s.op === "fetch-key")).toBeDefined();
-      expect(r.steps.find(s => s.op === "decrypt-aes-128")).toBeDefined();
-    }
+    expect(r).toEqual({ kind: "refuse", reason: "hls_encryption_unsupported" });
   });
 
   it("SAMPLE-AES HLS variant → refuses with cdm_required", () => {
@@ -200,13 +194,9 @@ describe("dispatch — HLS", () => {
 });
 
 describe("dispatch — DASH", () => {
-  it("clear DASH → dash plan with chosen variant + audioRenditionId", () => {
+  it("clear DASH → refuses instead of producing a download plan", () => {
     const r = dispatch(makeDash(), { ...originalChoice, variantId: "dash-1080" as VariantId });
-    expect(r.kind).toBe("dash");
-    if (r.kind === "dash") {
-      expect(r.variantId).toBe("dash-1080");
-      expect(r.outputContainer).toBe("mp4");
-    }
+    expect(r).toEqual({ kind: "refuse", reason: "dash_unsupported" });
   });
 });
 
@@ -246,6 +236,21 @@ describe("dispatch — progressive containers", () => {
       ...makeDirect(),
       container: "mp4",
       source: { kind: "direct-url", url: "https://x/v.mp4", headers: {} },
+      capabilities: {
+        directDownload: false,
+        remuxableTo: [],
+        drmBlocked: false,
+      },
+    };
+    const r = dispatch(d, originalChoice);
+    expect(r).toEqual({ kind: "refuse", reason: "unsupported_output" });
+  });
+
+  it("unknown protocol direct-url refuses instead of best-effort downloading", () => {
+    const d: StreamDescriptor = {
+      ...makeDirect(),
+      protocol: "unknown",
+      confidence: { protocol: "guessed", container: "guessed", codecs: "guessed" },
       capabilities: {
         directDownload: false,
         remuxableTo: [],

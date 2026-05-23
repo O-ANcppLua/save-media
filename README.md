@@ -1,78 +1,79 @@
 # savemedia
 
-Browser extension for saving browser-visible video streams. The repository has
-one support contract: direct files, tested HLS/DASH paths, and honest refusal
-when the stream cannot be saved without broken output or unsupported
-decryption.
+Browser extension for saving browser-visible video when the extension can prove
+it is a complete video and can produce one playable final file.
 
-This is not a DRM bypass tool. It does not use a native host, yt-dlp,
-ffmpeg.wasm, or hidden remote services. Unsupported paths are unsupported; the
-docs do not split them into roadmap buckets.
+There is one support contract. A path is either supported, refused with a clear
+reason, or not claimed. savemedia is not a DRM bypass tool and does not use a
+native host, yt-dlp, ffmpeg.wasm, local ffmpeg, or hidden remote services.
 
 ## Supported
 
-Verified in the Chrome Playwright extension suite with real ffmpeg-generated
-golden media fixtures:
+Verified in the Chrome Playwright extension suite with real media fixtures:
 
-- Direct progressive video: `.mp4`, `.webm`, `.mkv`
-- HLS master/media playlists with MPEG-TS segments, saved as playable MP4
-- HLS AES-128 when the playlist exposes a reachable key URI
-- HLS fMP4/CMAF playlists with `EXT-X-MAP`
-- DASH `SegmentList` fMP4 video with init + media segments, saved as playable MP4
-- DRM and ClearKey/CENC detection with no Download button
-- Negative filtering for `.jpg`, `.jpeg`, `.png`, `.gif`, `.css`, `.js`, `.html`
-- `Alt+S` command registration in Chrome; manual Chrome testing confirmed it
-  starts the highest-quality detected download on the current tab
+- Direct progressive `.mp4`, `.webm`, and `.mkv` files after headers or magic
+  bytes confirm the container. A matching URL extension alone is only a hint.
+- Plain HLS VOD with MPEG-TS segments, remuxed to one playable MP4.
+- DRM, ClearKey/CENC, DASH, encrypted HLS, HLS fMP4/CMAF, and live HLS detection
+  as refusal cases.
+- Negative filtering for `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.css`,
+  `.js`, `.html`, standalone audio files, orphan `.ts`, orphan `.m4s`, init
+  segments, and numbered chunk URLs.
+- `Alt+S` command registration in Chrome. Manual Chrome testing confirmed it
+  starts the highest-quality supported detected download on the current tab.
 
-The engine aborts and deletes partial in-memory output when a required segment
-fails. It should not save random chunk files or mislabeled `.ts` files as video.
+The engine aborts partial in-memory output when a required segment fails. It
+must not save random chunks, fake `.mp4` HTML responses, or mislabeled `.ts`
+bytes as final video.
 
-## Unsupported
+## Refused
 
-- No DRM circumvention: Widevine, PlayReady, FairPlay, SAMPLE-AES, and encrypted
-  EME paths are refused.
-- ClearKey/CENC sample decryption is not implemented. It is detected separately
-  from CDM-bound DRM, but it is not downloaded.
-- No transcoding and no "make smaller" mode.
-- No arbitrary progressive-container remux. Direct progressive files are saved
-  as the server provides them.
-- No native host and no >2 GiB streaming sink. Browser Blob limits are enforced
-  before starting a risky in-browser save.
-- DASH support is limited to the currently tested fMP4 init+media path. More
-  complex DASH audio/video layouts need their own golden fixture before being
-  advertised.
+- DASH downloads.
+- Standalone audio downloads.
+- HLS AES-128, SAMPLE-AES, SAMPLE-AES-CTR, ClearKey/CENC, Widevine, PlayReady,
+  FairPlay, and other protected media paths.
+- HLS Live/DVR or any playlist without `EXT-X-ENDLIST`.
+- HLS fMP4/CMAF layouts until structural validation is implemented and covered
+  by golden media tests.
+- Direct `.mov`, `.avi`, `.wmv`, `.flv`, `.m4v` as independent support claims.
+  `m4v` may be accepted only when bytes prove it is normal MP4.
+- Transcoding, size-reduction modes, arbitrary container conversion, and
+  browser-native downloads above the in-memory safety limit.
+- Unknown protocol or URL-only "best effort" downloads.
 
-## Browser Verification
+## Browser Evidence
 
 | Browser target | Current evidence | Claim level |
 | --- | --- | --- |
-| Chrome | Automated unpacked-extension Playwright suite, including golden downloadable media verified with `ffprobe`. | Supported for the capabilities listed above. |
-| Edge | Builds from the same Chromium bundle and packages as `savemedia-edge-0.0.1.zip`. No independent Edge runtime smoke test is currently checked in. | Build exists; runtime parity is not claimed. |
-| Firefox | Firefox bundle builds. CI/Playwright currently runs baseline fixture-server checks only; extension behavior is skipped because Firefox MV3 loading needs a separate `web-ext` harness. | Build exists; extension runtime is not verified yet. |
+| Chrome | Automated unpacked-extension Playwright suite, including real downloads verified with `ffprobe`. | Supported for the capabilities above. |
+| Edge | Chromium zip is built as `savemedia-edge-0.0.1.zip`; no independent Edge runtime smoke test is checked in. | Build exists; runtime parity is not claimed. |
+| Firefox | Firefox zip builds. CI/Playwright currently exercises fixture pages only; extension behavior is skipped until a Firefox MV3/web-ext harness exists. | Build exists; extension runtime is not claimed. |
 
 Browser store submission is outside the verified repository contract. Any store
 listing must match the browser evidence above.
 
 ## Architecture
 
-- `packages/core`: pure TypeScript classification, dispatch, verification,
-  retry policy, and user-facing error taxonomy.
-- `packages/extension`: MV3 extension, popup UI, background router, content
-  detection, offscreen engine host, HLS/DASH runners, and package scripts.
-- `packages/extension/tests/e2e/media-fixtures`: real tiny media fixtures used
-  by Playwright and `ffprobe`; these are the source of truth for downloader
-  correctness.
+- `packages/core`: classification, DASH/DRM/HLS parsing for descriptors,
+  dispatch decisions, retry policy, and user-facing error taxonomy.
+- `packages/extension`: MV3 extension, popup UI, background router, passive
+  content detection, Chromium offscreen engine host, direct downloads, and
+  plain-HLS jobs.
+- `packages/extension/tests/e2e/media-fixtures`: real tiny downloadable media
+  fixtures used by Playwright and `ffprobe`.
 
 Chrome execution path:
 
-1. MAIN-world content script detects visible media URLs and posts tagged
-   messages.
-2. ISOLATED bridge relays those messages to the service worker.
-3. Service worker classifies descriptors, dedupes noisy segment URLs, and
-   starts either a direct browser download or an engine job.
-4. Offscreen engine fetches required manifests/segments, decrypts HLS AES-128
-   when allowed, remuxes tested stream paths, verifies container output, and
-   hands a Blob URL to `chrome.downloads.download`.
+1. MAIN-world content script passively observes resource timing, media elements,
+   MediaSource encryption probes, and EME requests. It does not monkey-patch
+   page `fetch` or `XMLHttpRequest`.
+2. ISOLATED bridge relays tagged messages to the service worker.
+3. The service worker also watches network entry requests, classifies
+   descriptors, dedupes noisy segment URLs, and starts either a direct browser
+   download or an HLS engine job.
+4. The offscreen engine fetches the selected HLS media playlist and segments,
+   refuses unsupported layouts/encryption, remuxes MPEG-TS to MP4, verifies the
+   MP4 signature, and hands a Blob URL to `chrome.downloads.download`.
 
 ## Development
 

@@ -10,9 +10,8 @@ export type AudioRenditionId = string & { readonly [RENDITION_ID_BRAND]: true };
 export type ProtocolFamily = "progressive-http" | "hls" | "dash" | "unknown";
 
 export type Container =
-  | "mp4" | "m4v" | "mov" | "webm" | "mkv"
+  | "mp4" | "webm" | "mkv"
   | "mpegts" | "fmp4" | "cmaf"
-  | "avi" | "wmv" | "flv"
   | "unknown";
 
 export type OutputContainer = "mp4" | "webm" | "mkv";

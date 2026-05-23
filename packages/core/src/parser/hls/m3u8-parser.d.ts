@@ -17,6 +17,7 @@ declare module "m3u8-parser" {
         map?: { uri: string; byterange?: { length: number; offset: number } };
         byterange?: { length: number; offset: number };
       }>;
+      endList?: boolean;
       /** Populated for DRM schemes (SAMPLE-AES / FairPlay / Widevine) */
       contentProtection?: Record<
         string,

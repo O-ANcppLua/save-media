@@ -2,7 +2,6 @@ import { BROWSER_OUTPUT_LIMIT_BYTES, dispatch, type StreamDescriptor, type JobEr
 import type { DownloadJob, JobResult, ProgressFn } from "./job";
 import { runDirectJob } from "./jobs/direct";
 import { runHlsJob } from "./jobs/hls";
-import { runDashJob } from "./jobs/dash";
 
 export const downloadJob: DownloadJob = async (descriptor, choice, onProgress, signal) => {
   const plan = dispatch(descriptor, choice);
@@ -16,12 +15,7 @@ export const downloadJob: DownloadJob = async (descriptor, choice, onProgress, s
       return runDirectJob(plan, onProgress, signal);
 
     case "hls-plain":
-    case "hls-aes":
       return runHlsJob(plan, descriptor, onProgress, signal);
-
-    case "dash":
-      return runDashJob(plan, descriptor, onProgress, signal);
-
   }
 };
 
@@ -59,6 +53,12 @@ function mapRefusalToError(reason: DispatchRefusalReason, d: StreamDescriptor): 
         estimatedBytes: Math.max(...d.variants.map(v => v.estimatedSize ?? 0), 0),
         limitBytes: BROWSER_OUTPUT_LIMIT_BYTES,
       };
+    case "dash_unsupported":
+      return { code: "dash_unsupported", severity: "terminal", manifestUrl: d.source.kind === "dash-manifest" ? d.source.manifestUrl : d.pageUrl };
+    case "hls_encryption_unsupported":
+      return { code: "hls_encryption_unsupported", severity: "terminal", manifestUrl: d.source.kind === "hls-manifest" ? d.source.manifestUrl : d.pageUrl, method: "AES-128" };
+    case "hls_live_unsupported":
+      return { code: "hls_live_unsupported", severity: "terminal", manifestUrl: d.source.kind === "hls-manifest" ? d.source.manifestUrl : d.pageUrl };
     default:
       return { code: "manifest_malformed", severity: "terminal", url: d.pageUrl, parserError: `unknown refusal: ${reason}` };
   }

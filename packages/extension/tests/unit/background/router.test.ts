@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createRouter, dispatchRefusalToError } from "../../../src/background/router";
-import { directDescriptor, hlsDescriptor, drmDescriptor, clearKeyDescriptor } from "../popup/helpers/descriptors";
+import { directDescriptor, hlsDescriptor, dashDescriptor, drmDescriptor, clearKeyDescriptor } from "../popup/helpers/descriptors";
 import type { UserChoice, StreamDescriptor, StreamId, VariantId } from "@savemedia/core";
 
 function deps() {
@@ -133,6 +133,15 @@ describe("router — startDownload routing", () => {
     expect(err?.code).toBe("clearkey_deferred");
   });
 
+  it("refuses DASH without calling engine host", async () => {
+    const d = deps();
+    const r = createRouter(d);
+    r.addDescriptor(1, dashDescriptor());
+    const err = await r.startDownload(dashDescriptor().id, choice({ variantId: "dash-1080" as VariantId }));
+    expect(err?.code).toBe("dash_unsupported");
+    expect(d.ensureEngineHost).not.toHaveBeenCalled();
+  });
+
   it("returns manifest_404 when streamId is unknown", async () => {
     const r = createRouter(deps());
     const err = await r.startDownload("nope" as StreamId, choice());
@@ -204,6 +213,21 @@ describe("router — startBestDownload", () => {
     const d = deps();
     const r = createRouter(d);
     r.addDescriptor(1, drmDescriptor("cdm_required"));
+    r.addDescriptor(1, directDescriptor());
+
+    const failure = await r.startBestDownload(1);
+
+    expect(failure).toBeNull();
+    expect(d.downloads.download).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://example.com/clip.mp4" }),
+    );
+    expect(d.ensureEngineHost).not.toHaveBeenCalled();
+  });
+
+  it("skips DASH descriptors when choosing the best stream", async () => {
+    const d = deps();
+    const r = createRouter(d);
+    r.addDescriptor(1, dashDescriptor());
     r.addDescriptor(1, directDescriptor());
 
     const failure = await r.startBestDownload(1);

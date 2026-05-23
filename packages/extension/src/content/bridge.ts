@@ -48,7 +48,7 @@ function discoverMediaUrls(): string[] {
     .replace(/\\\//g, "/")
     .replace(/&amp;/g, "&");
   const seen = new Set<string>();
-  const mediaUrl = /(?:(?:https?:)?\/\/|\/|\.\.?\/)[^\s"'<>]+?\.(?:m3u8|mpd|mp4|m4v|webm|mkv|mov|avi|flv|wmv)(?:[^\s"'<>]*)?/gi;
+  const mediaUrl = /(?:(?:https?:)?\/\/|\/|\.\.?\/)[^\s"'<>]+?\.(?:m3u8|mpd|mp4|webm|mkv)(?:[^\s"'<>]*)?/gi;
   for (const match of normalized.matchAll(mediaUrl)) {
     const raw = match[0];
     if (!raw || looksLikeFragmentUrl(raw)) continue;
@@ -88,5 +88,5 @@ function looksLikeFragmentUrl(url: string): boolean {
   const base = path.split("/").filter(Boolean).at(-1) ?? path;
   if (/\.(m4s|ts|mpegts)$/i.test(base)) return true;
   if (/\.mp4\/[^/]+\.(mp4|m4s)$/i.test(path)) return true;
-  return /^(init|seg|segment|chunk|frag|fragment|part)[._-][a-z0-9._-]*\.(mp4|m4v)$/i.test(base);
+  return /^(init|seg|segment|chunk|frag|fragment|part)[._-][a-z0-9._-]*\.mp4$/i.test(base);
 }

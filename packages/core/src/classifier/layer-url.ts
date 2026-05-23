@@ -8,16 +8,10 @@ export interface UrlClassification {
 
 const EXT_TO_CONTAINER: Record<string, Container> = {
   mp4: "mp4",
-  m4v: "m4v",
-  mov: "mov",
   webm: "webm",
   mkv: "mkv",
   ts: "mpegts",
   m4s: "fmp4",
-  avi: "avi",
-  wmv: "wmv",
-  asf: "wmv",
-  flv: "flv",
 };
 
 const EXT_TO_PROTOCOL: Record<string, ProtocolFamily> = {

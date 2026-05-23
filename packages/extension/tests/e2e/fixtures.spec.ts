@@ -33,6 +33,14 @@ test.describe("fixture server", () => {
     expect(mediaText).toContain("EXT-X-ENDLIST");
   });
 
+  test("serves the HLS live fixture without EXT-X-ENDLIST", async ({ page }) => {
+    await page.goto("/page/hls-live.html");
+    const media = await page.request.get("/hls-live/media.m3u8");
+    const mediaText = await media.text();
+    expect(mediaText).toContain("seg000.ts");
+    expect(mediaText).not.toContain("EXT-X-ENDLIST");
+  });
+
   test("serves the HLS fMP4 playlist with EXT-X-MAP init segment", async ({ page }) => {
     await page.goto("/page/hls-fmp4.html");
     const media = await page.request.get("/hls-fmp4/media.m3u8");
@@ -50,12 +58,13 @@ test.describe("fixture server", () => {
     expect(Number(key.headers()["content-length"])).toBe(16);
   });
 
-  test("serves the DASH MPD with SegmentList", async ({ page }) => {
+  test("serves a clear DASH MPD for detection/refusal", async ({ page }) => {
     await page.goto("/page/dash.html");
     const mpd = await page.request.get("/dash/clip.mpd");
     const text = await mpd.text();
     expect(text).toContain("SegmentList");
     expect(text).toContain("init.m4s");
+    expect((await page.request.get("/dash/init.m4s")).status()).toBe(404);
   });
 
   test("widevine MPD has the Widevine UUID in ContentProtection", async ({ page }) => {
@@ -80,6 +89,8 @@ test.describe("fixture server", () => {
       "/negative/asset.css",
       "/negative/asset.js",
       "/negative/asset.gif",
+      "/negative/asset.mp3",
+      "/negative/asset.m4a",
     ]) {
       const r = await page.request.get(path);
       expect(r.status()).toBe(200);

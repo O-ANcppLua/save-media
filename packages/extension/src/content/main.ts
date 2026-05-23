@@ -55,7 +55,7 @@ const emit = (kind: CaptureKind, url: string | null, extras: Partial<MainToBridg
 function looksLikeMediaEntry(url: string): boolean {
   if (/\.(m3u8|mpd)(\?|#|$)/i.test(url)) return true;
   if (looksLikeFragmentUrl(url)) return false;
-  return /\.(mp4|m4v|webm|mkv|mov)(\?|#|$)/i.test(url);
+  return /\.(mp4|webm|mkv)(\?|#|$)/i.test(url);
 }
 
 function looksLikeFragmentUrl(url: string): boolean {
@@ -68,7 +68,7 @@ function looksLikeFragmentUrl(url: string): boolean {
   const base = path.split("/").filter(Boolean).at(-1) ?? path;
   if (/\.(m4s|ts|mpegts)$/i.test(base)) return true;
   if (/\.mp4\/[^/]+\.(mp4|m4s)$/i.test(path)) return true;
-  return /^(init|seg|segment|chunk|frag|fragment|part)(?:[._-][a-z0-9._-]*)?\.(mp4|m4v)$/i.test(base);
+  return /^(init|seg|segment|chunk|frag|fragment|part)(?:[._-][a-z0-9._-]*)?\.mp4$/i.test(base);
 }
 
 function observeResourceUrl(url: string): void {

@@ -24,6 +24,10 @@ export type JobError =
   | { code: "unsupported_codec";          severity: "terminal";    codec: VideoCodec | AudioCodec; where: "source" | "target" }
   | { code: "no_remux_path";              severity: "terminal";    from: Container; to: OutputContainer; reason: "container-not-supported-by-engine" | "codec-incompatible-with-target" }
   | { code: "unsupported_output";         severity: "terminal";    from: Container; to: OutputContainer; reason: "conversion-not-implemented" | "container-not-supported" }
+  | { code: "dash_unsupported";           severity: "terminal";    manifestUrl: string }
+  | { code: "hls_encryption_unsupported"; severity: "terminal";    manifestUrl: string; method: string }
+  | { code: "hls_live_unsupported";       severity: "terminal";    manifestUrl: string }
+  | { code: "hls_layout_unsupported";     severity: "terminal";    manifestUrl: string; detail: string }
   | { code: "output_too_large_for_browser"; severity: "terminal";  estimatedBytes: number; limitBytes: number }
 
   // Network

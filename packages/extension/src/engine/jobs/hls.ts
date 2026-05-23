@@ -1,6 +1,5 @@
 import type {
   HlsPlainPlan,
-  HlsAesPlan,
   StreamDescriptor,
   Variant,
 } from "@savemedia/core";
@@ -22,17 +21,15 @@ import { remuxTsToMp4 } from "../remux/ts-to-mp4";
  * playlist (which dispatch saw) usually doesn't carry EXT-X-KEY; the key
  * lives on the media playlist. So the runner:
  *   1. fetches the media playlist
- *   2. inspects the runtime parser's `encryption` field
- *   3. AES-128 → SubtleCrypto decrypt per segment
- *   4. SAMPLE-AES / SAMPLE-AES-CTR / unknown METHOD → throw cdm_required
- *      (DO NOT ship encrypted bytes to disk)
- *   5. null / METHOD=NONE → plain concatenation
+ *   2. requires a fixed VOD playlist (`EXT-X-ENDLIST`)
+ *   3. refuses any `EXT-X-KEY` method
+ *   4. remuxes MPEG-TS segments to MP4 through mediabunny
  *
  * This is independent of `plan.kind` so an hls-plain dispatch decision
  * cannot leak ciphertext when the media playlist is actually encrypted.
  */
 export async function runHlsJob(
-  plan: HlsPlainPlan | HlsAesPlan,
+  plan: HlsPlainPlan,
   descriptor: StreamDescriptor,
   onProgress: ProgressFn,
   signal: AbortSignal,
@@ -74,64 +71,73 @@ export async function runHlsJob(
     };
   }
 
-  // Runtime-authoritative encryption decision. The plan kind is advisory.
-  const cryptoKey = await resolveDecryptionKey(media.encryption, signal);
+  assertSupportedPlainVod(media, playlistUrl);
 
-  return fetchSegments(media, plan, onProgress, signal, cryptoKey, externalSink);
+  return fetchSegments(media, plan, onProgress, signal, externalSink);
 }
 
-async function resolveDecryptionKey(
-  encryption: RuntimeEncryption | null,
-  signal: AbortSignal,
-): Promise<CryptoKey | null> {
-  if (!encryption) return null;
-  const method = encryption.method.toUpperCase();
-  if (method === "" || method === "NONE") return null;
-  if (method === "AES-128") {
-    return loadAesKey(encryption.keyUri, signal);
+function assertSupportedPlainVod(
+  media: { readonly isVod: boolean; readonly encryption: RuntimeEncryption | null; readonly initSegmentUrl: string | null },
+  playlistUrl: string,
+): void {
+  if (!media.isVod) {
+    throw {
+      code: "hls_live_unsupported",
+      severity: "terminal",
+      manifestUrl: playlistUrl,
+    };
   }
-  // SAMPLE-AES, SAMPLE-AES-CTR, AES-CTR, or anything we don't recognise.
-  // Refuse — we will not write ciphertext to disk under a clear-output filename.
+  if (media.encryption) {
+    const method = media.encryption.method.toUpperCase();
+    if (method === "AES-128") {
+      throw {
+        code: "hls_encryption_unsupported",
+        severity: "terminal",
+        manifestUrl: playlistUrl,
+        method,
+      };
+    }
+    throw {
+      code: "cdm_required",
+      severity: "terminal",
+      keySystem: method,
+    };
+  }
+  if (media.initSegmentUrl) {
+    throw {
+      code: "hls_layout_unsupported",
+      severity: "terminal",
+      manifestUrl: playlistUrl,
+      detail: "HLS fMP4/CMAF playlists require structural MP4 validation that is not enabled.",
+    };
+  }
+}
+
+function unsupportedLayout(manifestUrl: string, detail: string): never {
   throw {
-    code: "cdm_required",
+    code: "hls_layout_unsupported",
     severity: "terminal",
-    keySystem: method,
+    manifestUrl,
+    detail,
   };
 }
 
 async function fetchSegments(
   media: { readonly initSegmentUrl: string | null; readonly segments: readonly RuntimeSegment[] },
-  plan: HlsPlainPlan | HlsAesPlan,
+  plan: HlsPlainPlan,
   onProgress: ProgressFn,
   signal: AbortSignal,
-  cryptoKey: CryptoKey | null,
   externalSink: JobSink | undefined,
 ): Promise<JobResult> {
   const { initSegmentUrl, segments } = media;
   const failed: number[] = [];
   let bytesWritten = 0;
-  // Sniff the first segment to pick the honest mime/filename; until we
-  // see the first decrypted segment we can't open the in-memory sink
-  // either (the mime depends on the sniff).
+  // Sniff the first segment before opening the sink. Unknown bytes are refused
+  // instead of guessed from a URL extension.
   let firstBytes: Uint8Array | null = null;
   let sink: JobSink | null = externalSink ?? null;
   let openedFilename: string | null = null;
   const writtenParts: Uint8Array[] = [];
-
-  if (initSegmentUrl) {
-    onProgress(0, null, "fetching-init");
-    const initResp = await fetchWithRetry(initSegmentUrl, signal, "segment").catch(err => {
-      throw classifyNetworkFailure(err, "segment", initSegmentUrl) ?? err;
-    });
-    firstBytes = new Uint8Array(await initResp.arrayBuffer());
-    const { mime, filename } = honestOutput(firstBytes, initSegmentUrl, plan, true);
-    if (!sink) sink = new InMemorySink(mime);
-    await sink.open(filename, plan.estimatedBytes);
-    openedFilename = filename;
-    await sink.write(firstBytes);
-    writtenParts.push(firstBytes);
-    bytesWritten += firstBytes.byteLength;
-  }
 
   for (let i = 0; i < segments.length; i++) {
     if (signal.aborted) {
@@ -142,9 +148,6 @@ async function fetchSegments(
     try {
       const resp = await fetchWithRetry(seg.uri, signal, "segment");
       let body: Uint8Array = new Uint8Array(await resp.arrayBuffer());
-      if (cryptoKey) {
-        body = await decryptAes128(body, cryptoKey, seg, i);
-      }
       if (firstBytes === null) {
         firstBytes = body;
         const { mime, filename } = honestOutput(body, seg.uri, plan, false);
@@ -245,47 +248,10 @@ function isTerminalThrown(err: unknown): boolean {
     || code === "encrypted_media_detected"
     || code === "clear_segments_unavailable"
     || code === "license_bound_stream"
-    || code === "clearkey_deferred";
-}
-
-async function loadAesKey(keyUri: string, signal: AbortSignal): Promise<CryptoKey> {
-  const resp = await fetchWithRetry(keyUri, signal, "manifest").catch(err => {
-    throw classifyNetworkFailure(err, "manifest", keyUri) ?? err;
-  });
-  const raw = await resp.arrayBuffer();
-  if (raw.byteLength !== 16) {
-    throw {
-      code: "license_bound_stream",
-      severity: "terminal",
-      keyUri,
-      httpStatus: resp.status,
-    };
-  }
-  return crypto.subtle.importKey("raw", raw, { name: "AES-CBC", length: 128 }, false, ["decrypt"]);
-}
-
-async function decryptAes128(
-  ciphertext: Uint8Array,
-  key: CryptoKey,
-  segment: RuntimeSegment,
-  index: number,
-): Promise<Uint8Array> {
-  const iv = segment.iv ?? mediaSequenceIv(segment.mediaSequence ?? index);
-  const plain = await crypto.subtle.decrypt({ name: "AES-CBC", iv: iv as BufferSource }, key, ciphertext as BufferSource);
-  // Copy into a fresh ArrayBuffer-backed Uint8Array so callers can pass it
-  // through Blob() without TS objecting about ArrayBufferLike vs ArrayBuffer.
-  const out = new Uint8Array(plain.byteLength);
-  out.set(new Uint8Array(plain));
-  return out;
-}
-
-function mediaSequenceIv(sequenceNumber: number): Uint8Array {
-  // HLS spec § 4.3.2.4: if IV is absent, the sequence number is the IV,
-  // big-endian, padded to 16 bytes.
-  const iv = new Uint8Array(16);
-  const view = new DataView(iv.buffer);
-  view.setUint32(12, sequenceNumber, false);
-  return iv;
+    || code === "clearkey_deferred"
+    || code === "hls_encryption_unsupported"
+    || code === "hls_live_unsupported"
+    || code === "hls_layout_unsupported";
 }
 
 function findVariant(d: StreamDescriptor, variantId: string): Variant | null {
@@ -308,25 +274,17 @@ function playlistUrlOf(v: Variant): string | null {
 function honestOutput(
   firstSegment: Uint8Array,
   firstSegmentUri: string | undefined,
-  plan: HlsPlainPlan | HlsAesPlan,
-  hasInitSegment: boolean,
+  plan: HlsPlainPlan,
+  _hasInitSegment: boolean,
 ): { mime: string; filename: string } {
   const sniff = sniffContainer(firstSegment, firstSegmentUri);
-  const requested = plan.outputContainer;
-  if (sniff === "fmp4" && requested === "mp4") return { mime: "video/mp4", filename: plan.outputFilename };
-  if (sniff === "fmp4-fragment" && requested === "mp4" && !hasInitSegment) {
-    throw {
-      code: "manifest_malformed",
-      severity: "terminal",
-      url: firstSegmentUri ?? "",
-      parserError: "fMP4 HLS media segments require an EXT-X-MAP init segment",
-    };
-  }
-  if (sniff === "webm" && requested === "webm") return { mime: "video/webm", filename: plan.outputFilename };
   if (sniff === "mpegts") {
     return { mime: "video/mp2t", filename: replaceExt(plan.outputFilename, "ts") };
   }
-  return { mime: mimeForContainer(requested), filename: plan.outputFilename };
+  return unsupportedLayout(
+    firstSegmentUri ?? "",
+    `The first HLS segment did not look like MPEG-TS (${sniff}).`,
+  );
 }
 
 type ContainerSniff = "fmp4" | "fmp4-fragment" | "mpegts" | "webm" | "unknown";
@@ -352,13 +310,4 @@ function replaceExt(filename: string, ext: string): string {
   const idx = filename.lastIndexOf(".");
   if (idx <= 0) return `${filename}.${ext}`;
   return `${filename.slice(0, idx)}.${ext}`;
-}
-
-function mimeForContainer(c: string): string {
-  switch (c) {
-    case "mp4": return "video/mp4";
-    case "webm": return "video/webm";
-    case "mkv": return "video/x-matroska";
-    default: return "application/octet-stream";
-  }
 }

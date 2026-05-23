@@ -10,6 +10,7 @@ export interface HlsMasterParseResult {
 export interface HlsMediaPlaylistParseResult {
   readonly segments: ReadonlyArray<{ readonly uri: string; readonly duration: number }>;
   readonly initSegmentUrl: string | null;
+  readonly isVod: boolean;
   readonly encryption: {
     readonly method: string;
     readonly uri: string;
@@ -92,6 +93,7 @@ export function parseHlsMediaPlaylist(manifestText: string, manifestUrl: string)
 
   return {
     initSegmentUrl: firstMap?.uri ? new URL(firstMap.uri, manifestUrl).href : null,
+    isVod: manifest.endList === true,
     segments: segs.map(s => ({ uri: new URL(s.uri, manifestUrl).href, duration: s.duration })),
     encryption: rawKey
       ? { method: rawKey.method, uri: new URL(rawKey.uri, manifestUrl).href, iv: rawKey.iv }

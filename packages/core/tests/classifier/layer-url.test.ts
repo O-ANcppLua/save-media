@@ -18,6 +18,12 @@ describe("layer-url", () => {
     expect(r.confidence.container).toBe("guessed");
   });
 
+  it("old direct containers are not accepted from URL hints", () => {
+    expect(classifyByUrl("https://cdn/v.mov").container).toBe("unknown");
+    expect(classifyByUrl("https://cdn/v.avi").container).toBe("unknown");
+    expect(classifyByUrl("https://cdn/v.flv").container).toBe("unknown");
+  });
+
   it("unknown URL → no signals", () => {
     const r = classifyByUrl("https://example.com/abc");
     expect(r.protocol).toBe("unknown");

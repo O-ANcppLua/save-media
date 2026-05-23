@@ -1,9 +1,9 @@
 import type { JobResult } from "./job";
 
 /**
- * Sink abstraction for engine jobs: HLS/DASH runners write segments
+ * Sink abstraction for engine jobs: the HLS runner writes verified segment bytes
  * through here. There is deliberately one implementation today:
- * InMemorySink. Keeping this boundary lets HLS/DASH tests inject a
+ * InMemorySink. Keeping this boundary lets HLS tests inject a
  * capturing sink without pretending a production streaming sink exists.
  *
  * write() is monotonic — callers append bytes in the order they
@@ -18,9 +18,9 @@ export interface JobSink {
 }
 
 /**
- * In-renderer-memory sink. Suitable for files up to roughly 2 GB
- * (the renderer Blob ceiling). Above that we now fail with a clear
- * error instead of risking a corrupt partial file.
+ * In-renderer-memory sink. Large outputs are refused before this path when
+ * their manifest gives us enough size information; otherwise final save still
+ * goes through the browser downloads API.
  */
 export class InMemorySink implements JobSink {
   private parts: BlobPart[] = [];

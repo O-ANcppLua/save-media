@@ -52,16 +52,17 @@ function mergeConfidence(a: Confidence, b: Confidence): Confidence {
 }
 
 // Direct-download containers are standalone files, not manifests.
-const PROGRESSIVE_CONTAINERS = new Set<Container>([
-  "mp4", "m4v", "mov", "webm", "mkv",
-]);
+const PROGRESSIVE_CONTAINERS = new Set<Container>(["mp4", "webm", "mkv"]);
 
 function resolveProtocol(
   fromLayers: ProtocolFamily,
   container: Container,
+  confidence: Confidence,
 ): ProtocolFamily {
   if (fromLayers !== "unknown") return fromLayers;
-  if (PROGRESSIVE_CONTAINERS.has(container)) return "progressive-http";
+  if (PROGRESSIVE_CONTAINERS.has(container) && confidence.container !== "guessed") {
+    return "progressive-http";
+  }
   return "unknown";
 }
 
@@ -70,26 +71,29 @@ function remuxableTargets(container: Container): readonly ("mp4" | "webm" | "mkv
     container === "mp4" ||
     container === "fmp4" ||
     container === "cmaf" ||
-    container === "m4v"
+    container === "mpegts"
   )
     return ["mp4"];
   if (container === "webm") return ["webm", "mp4"];
   if (container === "mkv") return ["mp4", "mkv"];
-  if (container === "mpegts") return ["mp4"];
   return [];
 }
 
 function computeCapabilities(
   protocol: ProtocolFamily,
   container: Container,
+  confidence: Confidence,
   _variants: readonly Variant[],
   drm: DrmStatus,
 ): OutputCapabilities {
   const drmBlocked = drm !== null;
-  const streaming = protocol === "hls" || protocol === "dash";
   return {
-    directDownload: !drmBlocked && protocol === "progressive-http",
-    remuxableTo: drmBlocked || !streaming ? [] : remuxableTargets(container),
+    directDownload:
+      !drmBlocked
+      && protocol === "progressive-http"
+      && PROGRESSIVE_CONTAINERS.has(container)
+      && confidence.container !== "guessed",
+    remuxableTo: drmBlocked || protocol !== "hls" ? [] : remuxableTargets(container),
     drmBlocked,
   };
 }
@@ -200,9 +204,9 @@ export async function classify(input: ClassifyInput): Promise<StreamDescriptor> 
   // they fetch the init segment.
 
   // Resolve protocol after all layers so magic-bytes can inform the decision.
-  protocol = resolveProtocol(protocol, container);
+  protocol = resolveProtocol(protocol, container, confidence);
 
-  const capabilities = computeCapabilities(protocol, container, variants, drm);
+  const capabilities = computeCapabilities(protocol, container, confidence, variants, drm);
   const id = `stream-${++_idCounter}` as StreamId;
 
   return {

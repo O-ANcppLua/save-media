@@ -5,17 +5,17 @@
  * Serves:
  *   /direct/clip.mp4 .webm .mkv  — tiny real progressive files
  *   /hls/master.m3u8 + media.m3u8 + segNNN.ts — real clear HLS VOD
- *   /hls-fmp4/master.m3u8 + media.m3u8 + EXT-X-MAP init + m4s fragments
- *   /hls-aes/key + master + media + ciphertext segments
- *   /dash/clip.mpd + init.m4s + segNNN.m4s — real clear DASH VOD
- *   /drm/widevine.mpd                       — DASH with Widevine ContentProtection
- *   /drm/clearkey.mpd                       — DASH with ClearKey (deferred reason)
+ *   /hls-fmp4/master.m3u8 + media.m3u8 + EXT-X-MAP init + m4s fragments — refused layout
+ *   /hls-aes/key + master + media + ciphertext segments — refused encryption
+ *   /dash/clip.mpd                         — clear DASH descriptor, refused download
+ *   /drm/widevine.mpd                      — DASH with Widevine ContentProtection
+ *   /drm/clearkey.mpd                      — DASH with ClearKey refusal
  *   /low/clip.mp4                            — sub-720p video
- *   /negative/page.html, /negative/asset.{jpg,html,css,js,gif,png}
+ *   /negative/page.html, /negative/asset.{jpg,html,css,js,gif,png,mp3,m4a}
  *   /page/<scenario>.html                    — fixture HTML that links to the right asset
  *
- * Media bytes are intentionally tiny, but they are real ffmpeg-generated
- * containers so download e2e can verify playable container output.
+ * Downloadable media bytes are intentionally tiny, but they are real
+ * ffmpeg-generated containers so download e2e can verify playable output.
  */
 import http from "node:http";
 import { readFileSync } from "node:fs";
@@ -25,6 +25,21 @@ import { fileURLToPath } from "node:url";
 const port = Number(process.env.SAVEMEDIA_FIXTURE_PORT ?? 0) || 5174;
 const here = dirname(fileURLToPath(import.meta.url));
 const mediaRoot = join(here, "media-fixtures");
+
+const DASH_MPD = `<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT4S" minBufferTime="PT1S">
+  <Period>
+    <AdaptationSet contentType="video" mimeType="video/mp4">
+      <Representation id="v1080" bandwidth="5000000" width="1920" height="1080" codecs="avc1.640028">
+        <BaseURL>video/</BaseURL>
+        <SegmentList timescale="1" duration="4">
+          <Initialization sourceURL="init.m4s"/>
+          <SegmentURL media="seg001.m4s"/>
+        </SegmentList>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>`;
 
 const WIDEVINE_MPD = `<?xml version="1.0" encoding="UTF-8"?>
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">
@@ -66,6 +81,20 @@ const routes = {
   "/hls/media.m3u8":   { type: "application/vnd.apple.mpegurl", body: fixture("hls/media.m3u8") },
   "/hls/seg000.ts":    { type: "video/mp2t", body: fixture("hls/seg000.ts") },
 
+  // HLS live/sliding-window refusal
+  "/hls-live/master.m3u8": { type: "application/vnd.apple.mpegurl", body: Buffer.from(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2"
+media.m3u8
+`) },
+  "/hls-live/media.m3u8": { type: "application/vnd.apple.mpegurl", body: Buffer.from(`#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:4
+#EXT-X-MEDIA-SEQUENCE:1
+#EXTINF:4.000,
+seg000.ts
+`) },
+  "/hls-live/seg000.ts": { type: "video/mp2t", body: fixture("hls/seg000.ts") },
+
   // HLS fMP4
   "/hls-fmp4/master.m3u8": { type: "application/vnd.apple.mpegurl", body: fixture("hls-fmp4/master.m3u8") },
   "/hls-fmp4/media.m3u8":  { type: "application/vnd.apple.mpegurl", body: fixture("hls-fmp4/media.m3u8") },
@@ -78,10 +107,8 @@ const routes = {
   "/hls-aes/key.bin":     { type: "application/octet-stream", body: fixture("hls-aes/key.bin") },
   "/hls-aes/seg000.ts":   { type: "video/mp2t", body: fixture("hls-aes/seg000.ts") },
 
-  // DASH
-  "/dash/clip.mpd":     { type: "application/dash+xml", body: fixture("dash/clip.mpd") },
-  "/dash/init.m4s":     { type: "video/mp4", body: fixture("dash/init.m4s") },
-  "/dash/seg001.m4s":   { type: "video/iso.segment", body: fixture("dash/seg001.m4s") },
+  // DASH detection/refusal only. Segment bytes are intentionally not served.
+  "/dash/clip.mpd":     { type: "application/dash+xml", body: Buffer.from(DASH_MPD) },
 
   // DRM
   "/drm/widevine.mpd":  { type: "application/dash+xml", body: Buffer.from(WIDEVINE_MPD) },
@@ -95,11 +122,14 @@ const routes = {
   "/negative/asset.gif":  { type: "image/gif",        body: Buffer.alloc(64, 0xFF) },
   "/negative/asset.css":  { type: "text/css",         body: Buffer.from("body { color: red; }") },
   "/negative/asset.js":   { type: "application/javascript", body: Buffer.from("// noop") },
+  "/negative/asset.mp3":  { type: "audio/mpeg",       body: Buffer.alloc(64, 0x00) },
+  "/negative/asset.m4a":  { type: "audio/mp4",        body: Buffer.alloc(64, 0x00) },
 };
 
 const pages = {
   direct: html("direct", `<video src="/direct/clip.mp4" controls width="640"></video>`),
   hls: html("hls", `<script>fetch("/hls/master.m3u8");</script><p>hls fixture</p>`),
+  "hls-live": html("hls-live", `<script>fetch("/hls-live/master.m3u8");</script><p>hls live fixture</p>`),
   "hls-fmp4": html("hls-fmp4", `<script>
     fetch("/hls-fmp4/master.m3u8");
     fetch("/hls-fmp4/init.mp4").catch(() => {});
@@ -112,7 +142,7 @@ const pages = {
   dash: html("dash", `<script>fetch("/dash/clip.mpd");</script><p>dash fixture</p>`),
   widevine: html("widevine", `<script>fetch("/drm/widevine.mpd");</script><p>widevine fixture</p>`),
   clearkey: html("clearkey", `<script>fetch("/drm/clearkey.mpd");</script><p>clearkey fixture</p>`),
-  negative: html("negative", `<img src="/negative/asset.jpg"><img src="/negative/asset.jpeg"><img src="/negative/asset.png"><iframe src="/negative/page.html"></iframe><link rel="stylesheet" href="/negative/asset.css"><script src="/negative/asset.js"></script>`),
+  negative: html("negative", `<img src="/negative/asset.jpg"><img src="/negative/asset.jpeg"><img src="/negative/asset.png"><iframe src="/negative/page.html"></iframe><link rel="stylesheet" href="/negative/asset.css"><script src="/negative/asset.js"></script><audio src="/negative/asset.mp3" controls></audio><a href="/negative/asset.m4a">audio</a>`),
   low: html("low", `<video src="/low/clip.mp4" controls></video>`),
 };
 

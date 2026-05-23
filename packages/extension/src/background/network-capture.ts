@@ -1,4 +1,4 @@
-import { MAIN_BRIDGE_TAG, type BridgeToBackgroundMessage, type CaptureKind } from "../types/messages";
+import { MAIN_BRIDGE_TAG, type BridgeToBackgroundMessage } from "../types/messages";
 
 export type CaptureHandler = (
   tabId: number,
@@ -33,7 +33,7 @@ export function looksLikeMediaEntryUrl(url: string, requestType?: string): boole
   if (/\.(m3u8|mpd)(\?|#|$)/i.test(url)) return true;
   if (looksLikeFragmentUrl(url)) return false;
   if (requestType === "xmlhttprequest") return false;
-  return /\.(mp4|m4v|webm|mkv|mov)(\?|#|$)/i.test(url);
+  return /\.(mp4|webm|mkv)(\?|#|$)/i.test(url);
 }
 
 export function looksLikeFragmentUrl(url: string): boolean {
@@ -46,7 +46,7 @@ export function looksLikeFragmentUrl(url: string): boolean {
   const base = path.split("/").filter(Boolean).at(-1) ?? path;
   if (/\.(m4s|ts|mpegts)$/i.test(base)) return true;
   if (/\.mp4\/[^/]+\.(mp4|m4s)$/i.test(path)) return true;
-  return /^(init|seg|segment|chunk|frag|fragment|part)(?:[._-][a-z0-9._-]*)?\.(mp4|m4v)$/i.test(base);
+  return /^(init|seg|segment|chunk|frag|fragment|part)(?:[._-][a-z0-9._-]*)?\.mp4$/i.test(base);
 }
 
 async function handleNetworkRequest(
@@ -56,13 +56,11 @@ async function handleNetworkRequest(
   if (details.tabId < 0 || !looksLikeMediaEntryUrl(details.url, details.type)) return;
 
   const pageUrl = await pageUrlFor(details);
-  const kind: CaptureKind = details.url.includes(".mpd") ? "xhr" : "fetch";
-
   await handleCapture(details.tabId, {
     type: "capture",
     payload: {
       [MAIN_BRIDGE_TAG]: true,
-      kind,
+      kind: "media-source",
       url: details.url,
       pageUrl,
     },

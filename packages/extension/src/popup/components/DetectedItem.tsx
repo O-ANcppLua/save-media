@@ -29,6 +29,7 @@ export function DetectedItem({ descriptor, status, onCancel }: Props) {
   const isDrmBlocked = descriptor.capabilities.drmBlocked;
   const isDeferred = descriptor.drm?.reason === "clearkey_deferred";
   const action = outputActionLabel(descriptor);
+  const isDownloadable = descriptor.capabilities.directDownload || descriptor.protocol === "hls";
 
   function download() {
     if (isDrmBlocked) return;
@@ -131,6 +132,14 @@ export function DetectedItem({ descriptor, status, onCancel }: Props) {
         <p className="mt-2 ml-5 text-emerald-400" data-testid="job-complete">✓ Saved.</p>
       )}
 
+      {!isDownloadable && !status && (
+        <p className="mt-2 ml-5 text-amber-500" data-testid="unsupported-card">
+          {descriptor.protocol === "dash"
+            ? "DASH detected. savemedia only downloads verified direct video files and plain HLS VOD playlists."
+            : "This media entry is not a supported download."}
+        </p>
+      )}
+
       <div className="mt-2 ml-5 flex items-center gap-2">
         {status?.phase === "active" ? (
           <button
@@ -139,14 +148,14 @@ export function DetectedItem({ descriptor, status, onCancel }: Props) {
           >
             Cancel
           </button>
-        ) : (
+        ) : isDownloadable ? (
           <button
             onClick={download}
             className="ml-auto bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded text-xs"
           >
             ⬇ Download
           </button>
-        )}
+        ) : null}
       </div>
     </li>
   );
@@ -155,7 +164,6 @@ export function DetectedItem({ descriptor, status, onCancel }: Props) {
 function outputActionLabel(d: StreamDescriptor): string {
   if (d.capabilities.directDownload) return "direct";
   if (d.protocol === "hls") return "hls";
-  if (d.protocol === "dash") return "dash";
   return "unsupported";
 }
 

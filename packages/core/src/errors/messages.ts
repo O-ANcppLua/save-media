@@ -97,6 +97,34 @@ export function userMessage(err: JobError): UserMessage {
         action: null,
       };
 
+    case "dash_unsupported":
+      return {
+        title: "DASH is not supported",
+        body: `DASH was detected at ${err.manifestUrl}, but savemedia only downloads verified direct video files and plain HLS VOD playlists.`,
+        action: null,
+      };
+
+    case "hls_encryption_unsupported":
+      return {
+        title: "Encrypted HLS is not supported",
+        body: `This HLS playlist uses ${err.method}. savemedia does not download encrypted HLS streams; it only downloads plain HLS VOD playlists.`,
+        action: null,
+      };
+
+    case "hls_live_unsupported":
+      return {
+        title: "Live HLS is not supported",
+        body: `The playlist at ${err.manifestUrl} is a live/sliding-window stream. savemedia only downloads complete HLS VOD playlists with a fixed end.`,
+        action: null,
+      };
+
+    case "hls_layout_unsupported":
+      return {
+        title: "This HLS layout is not supported",
+        body: `${err.detail} savemedia only downloads plain HLS VOD playlists that can be remuxed into one verified final video.`,
+        action: null,
+      };
+
     case "output_too_large_for_browser":
       return {
         title: "File is too large for the in-browser saver",

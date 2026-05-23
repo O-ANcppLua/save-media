@@ -16,4 +16,10 @@ describe("background network capture URL filter", () => {
     expect(looksLikeMediaEntryUrl("https://video.example/hls/720p.av1.mp4/seg-22-v1-a1.mp4")).toBe(false);
     expect(looksLikeMediaEntryUrl("https://cdn.example/video/movie.mp4", "xmlhttprequest")).toBe(false);
   });
+
+  it("does not capture standalone audio files as video entries", () => {
+    expect(looksLikeMediaEntryUrl("https://cdn.example/audio/track.mp3")).toBe(false);
+    expect(looksLikeMediaEntryUrl("https://cdn.example/audio/track.m4a")).toBe(false);
+    expect(looksLikeMediaEntryUrl("https://cdn.example/audio/segment-01.aac")).toBe(false);
+  });
 });

@@ -9,9 +9,9 @@ export type {
   SegmentRef, ByteRange, HlsEncryption,
 } from "./types/codec";
 export type {
-  JobPlan, JobStep, DirectPlan, HlsPlainPlan, HlsAesPlan, DashPlan,
+  JobPlan, JobStep, DirectPlan, HlsPlainPlan,
   OutputMode, UserChoice, DispatchRefusal, DispatchRefusalReason,
-  VerifyCheckKind, KeyHandle,
+  VerifyCheckKind,
 } from "./types/job";
 export type { JobError, JobErrorCode, JobErrorSeverity } from "./errors/taxonomy";
 export type { UserMessage, ActionKind } from "./errors/messages";

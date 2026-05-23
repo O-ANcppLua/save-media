@@ -13,8 +13,8 @@ describe("container-registry magic bytes", () => {
     expect(detectContainerFromBytes(ftyp("isom"))).toBe("mp4");
   });
 
-  it("detects qt   brand as mov", () => {
-    expect(detectContainerFromBytes(ftyp("qt  "))).toBe("mov");
+  it("does not accept QuickTime as a supported direct container", () => {
+    expect(detectContainerFromBytes(ftyp("qt  "))).toBe("unknown");
   });
 
   it("detects dash brand as fmp4", () => {
@@ -24,6 +24,13 @@ describe("container-registry magic bytes", () => {
   it("detects EBML 0x1A45DFA3 as matroska/webm", () => {
     const b = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]);
     expect(detectContainerFromBytes(b)).toBe("mkv"); // DocType TBD by deeper parse
+  });
+
+  it("detects EBML WebM doctype when present in the probe window", () => {
+    const b = new Uint8Array(64);
+    b.set([0x1a, 0x45, 0xdf, 0xa3]);
+    b.set(new TextEncoder().encode("webm"), 16);
+    expect(detectContainerFromBytes(b)).toBe("webm");
   });
 
   it("detects MPEG-TS sync byte at offset 0 and 188", () => {
