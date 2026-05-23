@@ -10,6 +10,7 @@ import type {
   EngineToBackgroundMessage,
 } from "../types/messages";
 import { createRouter } from "./router";
+import { registerDownloadBestCommand } from "./download-best";
 import { registerNetworkCapture } from "./network-capture";
 import { ensureEngineHost } from "../platform/processor-host";
 import { consoleLogger } from "../util/logger";
@@ -84,6 +85,22 @@ async function handleCapture(
 }
 
 registerNetworkCapture(handleCapture);
+
+registerDownloadBestCommand(chrome.commands, {
+  tabs: {
+    query: queryInfo => chrome.tabs.query(queryInfo),
+    sendMessage: (tabId, msg, cb) => chrome.tabs.sendMessage(tabId, msg, cb),
+  },
+  runtime: {
+    lastError: () => chrome.runtime.lastError,
+    sendMessage: (msg, cb) => chrome.runtime.sendMessage(msg, () => {
+      void chrome.runtime.lastError;
+      cb?.();
+    }),
+  },
+  router,
+  handleCapture,
+});
 
 function updateBadge(tabId: number): void {
   const count = router.listDescriptors(tabId).length;

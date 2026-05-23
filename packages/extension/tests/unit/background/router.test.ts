@@ -149,6 +149,85 @@ describe("router — startDownload routing", () => {
   });
 });
 
+describe("router — startBestDownload", () => {
+  it("downloads the highest HLS variant on the active tab", async () => {
+    const d = deps();
+    const r = createRouter(d);
+    const base = hlsDescriptor().variants[0]!;
+    const highVariant = {
+      ...base,
+      id: "v-1080" as VariantId,
+      height: 1080,
+      bitrate: 5_000_000,
+    };
+    const lowVariant = {
+      ...base,
+      id: "v-480" as VariantId,
+      height: 480,
+      bitrate: 1_000_000,
+    };
+    r.addDescriptor(1, hlsDescriptor({ variants: [lowVariant, highVariant] }));
+
+    const failure = await r.startBestDownload(1);
+
+    expect(failure).toBeNull();
+    expect(d.ensureEngineHost).toHaveBeenCalledTimes(1);
+    const sent = vi.mocked(d.runtime.sendMessage).mock.calls[0]?.[0];
+    expect(sent).toMatchObject({
+      type: "start-job",
+      choice: {
+        outputMode: "Original",
+        filename: "master.m3u8.mp4",
+        variantId: "v-1080",
+      },
+    });
+  });
+
+  it("falls back to direct download when the tab only has a progressive file", async () => {
+    const d = deps();
+    const r = createRouter(d);
+    r.addDescriptor(1, directDescriptor());
+
+    const failure = await r.startBestDownload(1);
+
+    expect(failure).toBeNull();
+    expect(d.downloads.download).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "https://example.com/clip.mp4",
+        filename: "clip name.mp4",
+      }),
+    );
+    expect(d.ensureEngineHost).not.toHaveBeenCalled();
+  });
+
+  it("skips DRM-blocked descriptors when choosing the best stream", async () => {
+    const d = deps();
+    const r = createRouter(d);
+    r.addDescriptor(1, drmDescriptor("cdm_required"));
+    r.addDescriptor(1, directDescriptor());
+
+    const failure = await r.startBestDownload(1);
+
+    expect(failure).toBeNull();
+    expect(d.downloads.download).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://example.com/clip.mp4" }),
+    );
+    expect(d.ensureEngineHost).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the active tab has no eligible descriptors", async () => {
+    const d = deps();
+    const r = createRouter(d);
+    r.addDescriptor(1, drmDescriptor("cdm_required"));
+
+    const failure = await r.startBestDownload(1);
+
+    expect(failure).toBeNull();
+    expect(d.downloads.download).not.toHaveBeenCalled();
+    expect(d.ensureEngineHost).not.toHaveBeenCalled();
+  });
+});
+
 describe("router — engine message handling", () => {
   it("forwards progress messages to popup payload shape", async () => {
     const r = createRouter(deps());

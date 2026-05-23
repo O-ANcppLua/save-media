@@ -6,6 +6,8 @@ import {
   type JobPlan,
   type DispatchRefusal,
   type DrmReason,
+  type OutputContainer,
+  type Variant,
 } from "@savemedia/core";
 import type {
   PopupToBackgroundMessage,
@@ -14,6 +16,7 @@ import type {
   EngineToBackgroundMessage,
 } from "../types/messages";
 import type { Logger } from "../util/logger";
+import { suggestFilename } from "../util/filename";
 
 type HlsDescriptor = StreamDescriptor & {
   readonly source: { readonly kind: "hls-manifest"; readonly manifestUrl: string; readonly type: "master" | "media" };
@@ -42,6 +45,7 @@ export interface Router {
   readonly findDescriptor: (id: StreamDescriptor["id"]) => StreamDescriptor | null;
   readonly clearTab: (tabId: number) => void;
   readonly startDownload: (id: StreamDescriptor["id"], choice: UserChoice) => Promise<JobError | null>;
+  readonly startBestDownload: (tabId: number) => Promise<{ streamId: StreamDescriptor["id"]; error: JobError } | null>;
   readonly handleEngineMessage: (msg: EngineToBackgroundMessage) => Promise<BackgroundToPopupMessage | null>;
   readonly handlePopupMessage: (
     msg: PopupToBackgroundMessage,
@@ -167,6 +171,67 @@ export function createRouter(deps: RouterDeps): Router {
     tabs.delete(tabId);
   }
 
+  function bestVariant(d: StreamDescriptor): Variant | null {
+    if (d.variants.length === 0) return null;
+    const sorted = [...d.variants].sort((a, b) => {
+      const h = (b.height ?? 0) - (a.height ?? 0);
+      if (h !== 0) return h;
+      return (b.bitrate ?? 0) - (a.bitrate ?? 0);
+    });
+    return sorted[0] ?? null;
+  }
+
+  function outputContainerFor(d: StreamDescriptor): OutputContainer {
+    if (d.container === "webm") return "webm";
+    if (d.container === "mkv") return "mkv";
+    return "mp4";
+  }
+
+  function bestDescriptorScore(d: StreamDescriptor): [number, number, number, number] {
+    const variant = bestVariant(d);
+    const protocolRank = d.protocol === "hls" || d.protocol === "dash"
+      ? 3
+      : d.protocol === "progressive-http"
+        ? 2
+        : 1;
+    return [
+      variant?.height ?? 0,
+      variant?.bitrate ?? 0,
+      protocolRank,
+      d.detectedAt,
+    ];
+  }
+
+  function compareBestDescriptors(a: StreamDescriptor, b: StreamDescriptor): number {
+    const as = bestDescriptorScore(a);
+    const bs = bestDescriptorScore(b);
+    for (let i = 0; i < as.length; i++) {
+      const diff = (bs[i] ?? 0) - (as[i] ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return a.id.localeCompare(b.id);
+  }
+
+  function bestDownloadChoice(d: StreamDescriptor): UserChoice {
+    const variant = bestVariant(d);
+    return {
+      outputMode: "Original",
+      filename: suggestFilename(d, outputContainerFor(d)),
+      variantId: variant?.id ?? null,
+      audioRenditionId: variant?.audioRenditionId ?? null,
+    };
+  }
+
+  async function startBestDownload(tabId: number): Promise<{ streamId: StreamDescriptor["id"]; error: JobError } | null> {
+    const descriptor = [...listDescriptors(tabId)]
+      .filter(d => !d.capabilities.drmBlocked)
+      .sort(compareBestDescriptors)[0];
+    if (!descriptor) return null;
+
+    const error = await startDownload(descriptor.id, bestDownloadChoice(descriptor));
+    return error ? { streamId: descriptor.id, error } : null;
+  }
+
   async function startDownload(id: StreamDescriptor["id"], choice: UserChoice): Promise<JobError | null> {
     const descriptor = findDescriptor(id);
     if (!descriptor) {
@@ -280,6 +345,7 @@ export function createRouter(deps: RouterDeps): Router {
     findDescriptor,
     clearTab,
     startDownload,
+    startBestDownload,
     handleEngineMessage,
     handlePopupMessage,
   };

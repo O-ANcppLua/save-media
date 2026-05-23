@@ -178,6 +178,9 @@ const pages = {
     fetch("/hls-fmp4/init-v1-a1.mp4").catch(() => {});
     fetch("/hls-fmp4/seg-1-v1-a1.mp4").catch(() => {});
   </script><p>hls fmp4 fixture</p>`),
+  "embedded-hls": html("embedded-hls", `<script>
+    window.__savemediaFixture = {"stream":{"url":"\\/hls\\/master.m3u8","urls":{"1080p":"\\/hls-fmp4\\/master.m3u8"}}};
+  </script><p>embedded hls fixture</p>`),
   "hls-aes": html("hls-aes", `<script>fetch("/hls-aes/master.m3u8");</script><p>hls-aes fixture</p>`),
   dash: html("dash", `<script>fetch("/dash/clip.mpd");</script><p>dash fixture</p>`),
   widevine: html("widevine", `<script>fetch("/drm/widevine.mpd");</script><p>widevine fixture</p>`),

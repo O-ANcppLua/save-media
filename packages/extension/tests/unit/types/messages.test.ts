@@ -3,6 +3,8 @@ import { MAIN_BRIDGE_TAG } from "../../../src/types/messages";
 import type {
   MainToBridgeMessage,
   BridgeToBackgroundMessage,
+  BackgroundToContentMessage,
+  ContentDiscoveryResponse,
   PopupToBackgroundMessage,
   BackgroundToPopupMessage,
   BackgroundToEngineMessage,
@@ -38,6 +40,16 @@ describe("message types", () => {
     };
     expect(wrap.type).toBe("capture");
     expect(wrap.payload[MAIN_BRIDGE_TAG]).toBe(true);
+  });
+
+  it("BackgroundToContentMessage asks the bridge to discover page media URLs", () => {
+    const msg: BackgroundToContentMessage = { type: "discover-page-media" };
+    const response: ContentDiscoveryResponse = {
+      pageUrl: "https://example.com/watch",
+      urls: ["https://cdn.example.com/master.m3u8"],
+    };
+    expect(msg.type).toBe("discover-page-media");
+    expect(response.urls[0]).toContain("master.m3u8");
   });
 
   it("PopupToBackgroundMessage download carries streamId + choice", () => {

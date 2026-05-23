@@ -31,6 +31,14 @@ export type BridgeToBackgroundMessage =
   | { readonly type: "capture"; readonly payload: MainToBridgeMessage }
   | { readonly type: "ready" };
 
+export type BackgroundToContentMessage =
+  | { readonly type: "discover-page-media" };
+
+export interface ContentDiscoveryResponse {
+  readonly pageUrl: string;
+  readonly urls: readonly string[];
+}
+
 export type BackgroundToPopupMessage =
   | { readonly type: "descriptors"; readonly tabId: number; readonly descriptors: readonly StreamDescriptor[] }
   | { readonly type: "job-progress"; readonly streamId: StreamDescriptor["id"]; readonly bytesWritten: number; readonly bytesTotal: number | null; readonly phase: string }

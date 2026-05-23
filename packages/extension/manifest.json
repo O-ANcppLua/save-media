@@ -30,6 +30,15 @@
     "default_popup": "src/popup/index.html",
     "default_title": "savemedia"
   },
+  "commands": {
+    "download-best": {
+      "suggested_key": {
+        "default": "Alt+S",
+        "mac": "Alt+S"
+      },
+      "description": "Download highest available media quality"
+    }
+  },
   "web_accessible_resources": [
     {
       "resources": ["content-main.js"],

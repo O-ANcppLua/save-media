@@ -139,6 +139,34 @@ test.describe("extension classifies real fixture pages", () => {
       await page.close();
     }
   });
+
+  test("content bridge discovers embedded HLS URLs before playback starts", async () => {
+    const page = await context!.newPage();
+    const extId = new URL(sw!.url()).host;
+    const popup = await context!.newPage();
+    try {
+      await page.goto("/page/embedded-hls.html");
+      await page.waitForLoadState("networkidle");
+      await popup.goto(`chrome-extension://${extId}/src/popup/index.html`);
+
+      const response = await popup.evaluate(async () => {
+        const tabs = await chrome.tabs.query({});
+        const fixture = tabs.find(t => t.url?.includes("/page/embedded-hls.html"));
+        if (!fixture?.id) return { ok: false, urls: [] as string[] };
+        const discovered = await new Promise<{ urls?: string[] } | undefined>(resolve =>
+          chrome.tabs.sendMessage(fixture.id!, { type: "discover-page-media" }, resp => resolve(resp)),
+        );
+        return { ok: true, urls: discovered?.urls ?? [] };
+      });
+
+      expect(response.ok).toBe(true);
+      expect(response.urls.some(u => u.endsWith("/hls/master.m3u8"))).toBe(true);
+      expect(response.urls.some(u => u.endsWith("/hls-fmp4/master.m3u8"))).toBe(true);
+    } finally {
+      await popup.close();
+      await page.close();
+    }
+  });
 });
 
 test.describe("popup HTML round-trips chrome.runtime messaging", () => {
@@ -199,6 +227,21 @@ test.describe("popup HTML round-trips chrome.runtime messaging", () => {
     } finally {
       await popup.close();
       await fixturePage.close();
+    }
+  });
+
+  test("Chrome registers Alt+S for the best-download command", async () => {
+    const popup = await context!.newPage();
+    try {
+      await popup.goto(`chrome-extension://${extId}/src/popup/index.html`);
+      const command = await popup.evaluate(async () => {
+        const commands = await chrome.commands.getAll();
+        return commands.find(c => c.name === "download-best") ?? null;
+      });
+      expect(command?.name).toBe("download-best");
+      expect(["Alt+S", "⌥S"]).toContain(command?.shortcut);
+    } finally {
+      await popup.close();
     }
   });
 });
