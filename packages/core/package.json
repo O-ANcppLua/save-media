@@ -1,6 +1,6 @@
 {
   "name": "@savemedia/core",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "description": "savemedia media classification, verification, and dispatch core.",
   "license": "Apache-2.0",

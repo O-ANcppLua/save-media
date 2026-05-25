@@ -132,7 +132,7 @@ pnpm --filter @savemedia/extension build:chrome
 ```
 
 Load `packages/extension/dist-chrome` as the unpacked extension or submit
-`packages/extension/savemedia-chrome-0.0.2.zip`.
+`packages/extension/savemedia-chrome-0.0.3.zip`.
 
 Firefox package:
 
@@ -142,8 +142,8 @@ pnpm --filter @savemedia/extension lint:firefox
 pnpm --filter @savemedia/extension smoke:firefox
 ```
 
-Submit `packages/extension/savemedia-firefox-0.0.2.zip` plus
-`packages/extension/savemedia-source-0.0.2.zip` and these build commands to AMO
+Submit `packages/extension/savemedia-firefox-0.0.3.zip` plus
+`packages/extension/savemedia-source-0.0.3.zip` and these build commands to AMO
 because the extension is bundled with Vite and reviewers need reproducible
 source instructions. The package script creates the source zip from tracked
 repository files and excludes generated signing artifacts.

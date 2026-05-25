@@ -1,6 +1,6 @@
 {
   "name": "savemedia",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "description": "Browser extension for saving verified direct video files and plain HLS VOD streams.",
   "license": "Apache-2.0",
