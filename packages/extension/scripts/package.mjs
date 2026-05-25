@@ -6,9 +6,8 @@
  * pack step from the build step and parallelise.
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve, dirname } from "node:path";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,39 +58,25 @@ function createSourceArchive(packageVersion) {
   const out = resolve(root, `savemedia-source-${packageVersion}.zip`);
   rmSync(out, { force: true });
 
-  // AMO's source-archive upload runs the same extension validator as the XPI
-  // upload — it expects a valid Firefox extension at the zip root. We satisfy
-  // that by staging the built dist-firefox tree at root AND placing the full
-  // git-tracked source tree under /source/ for reviewers to build from.
-  const stage = mkdtempSync(join(tmpdir(), "savemedia-source-"));
-  try {
-    cpSync(resolve(root, "dist-firefox"), stage, { recursive: true });
-
-    const tracked = spawnSync("git", ["ls-files", "-z"], { cwd: repoRoot });
-    if (tracked.status !== 0) {
-      console.error("✘ could not list tracked source files");
-      process.exit(tracked.status ?? 1);
-    }
-    const files = tracked.stdout.toString()
-      .split("\0")
-      .filter(Boolean)
-      .filter(file => !file.endsWith(".crx") && !file.endsWith(".pem") && !file.endsWith(".zip"));
-
-    const sourceDir = resolve(stage, "source");
-    for (const f of files) {
-      const dest = resolve(sourceDir, f);
-      mkdirSync(dirname(dest), { recursive: true });
-      cpSync(resolve(repoRoot, f), dest);
-    }
-
-    const r = spawnSync("zip", ["-rq", out, "."], { cwd: stage, stdio: "inherit" });
-    if (r.status !== 0) {
-      console.error("✘ source zip failed");
-      process.exit(r.status ?? 1);
-    }
-  } finally {
-    rmSync(stage, { recursive: true, force: true });
+  // Per Mozilla's source-code submission policy
+  // (https://extensionworkshop.com/documentation/publish/source-code-submission/):
+  // the source archive should contain the buildable source code, not a packaged
+  // extension. Reviewers rebuild the XPI from this and diff against the upload.
+  const tracked = spawnSync("git", ["ls-files", "-z"], { cwd: repoRoot });
+  if (tracked.status !== 0) {
+    console.error("✘ could not list tracked source files");
+    process.exit(tracked.status ?? 1);
   }
 
+  const files = tracked.stdout.toString()
+    .split("\0")
+    .filter(Boolean)
+    .filter(file => !file.endsWith(".crx") && !file.endsWith(".pem") && !file.endsWith(".zip"));
+
+  const r = spawnSync("zip", ["-q", out, ...files], { cwd: repoRoot, stdio: "inherit" });
+  if (r.status !== 0) {
+    console.error("✘ source zip failed");
+    process.exit(r.status ?? 1);
+  }
   console.log(`✓ ${out} (${(statSync(out).size / 1024 / 1024).toFixed(2)} MB)`);
 }
